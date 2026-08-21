@@ -2,6 +2,16 @@
 -- Supabase 프로젝트의 SQL Editor에서 이 파일 전체를 한 번 실행하세요.
 
 -- ─────────────────────────────────────────────
+-- 0. allowed_emails: 초대한 친구만 가입할 수 있도록 하는 허용목록.
+--    RLS를 켜두고 정책은 하나도 안 만들어서, API로는 아무도 조회/수정 못 하고
+--    Supabase SQL Editor에서 직접 관리자만 다룰 수 있다.
+-- ─────────────────────────────────────────────
+create table if not exists public.allowed_emails (
+  email text primary key
+);
+alter table public.allowed_emails enable row level security;
+
+-- ─────────────────────────────────────────────
 -- 1. profiles: auth.users를 확장하는 사용자 프로필
 -- ─────────────────────────────────────────────
 create table if not exists public.profiles (
@@ -10,13 +20,20 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
--- 신규 가입 시 자동으로 프로필 생성 (닉네임은 이메일 앞부분을 기본값으로)
+-- 신규 가입 시 허용목록에 있는 이메일인지 먼저 확인하고, 통과하면 프로필을 자동 생성한다
+-- (닉네임은 이메일 앞부분을 기본값으로).
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
+  if not exists (
+    select 1 from public.allowed_emails where lower(email) = lower(new.email)
+  ) then
+    raise exception '초대되지 않은 이메일이라 가입할 수 없어요: %', new.email;
+  end if;
+
   insert into public.profiles (id, nickname)
   values (new.id, coalesce(new.raw_user_meta_data ->> 'nickname', split_part(new.email, '@', 1)));
   return new;

@@ -23,6 +23,13 @@
 4. **Authentication → URL Configuration**에서 Redirect URL에 배포할 도메인(예: `https://your-app.vercel.app/auth/confirm`)과
    로컬 개발용 `http://localhost:3000/auth/confirm` 을 추가
    - 기본은 이메일 매직링크 로그인이라 별도 소셜 로그인 설정 없이 바로 씁니다.
+5. **초대할 친구 이메일 등록 (중요)** — `schema.sql`에 포함된 `allowed_emails` 테이블에 등록된 이메일만
+   가입이 됩니다. 도메인에 배포하면 URL만 아는 누구나 매직 링크로 가입을 시도할 수 있기 때문에, 실제로 초대할
+   친구가 아니면 아예 가입 자체가 막히도록 만든 안전장치예요. 친구를 초대할 때마다 SQL Editor에서:
+   ```sql
+   insert into public.allowed_emails (email) values ('친구이메일@example.com');
+   ```
+   를 먼저 실행해두고 나서 그 사람에게 URL을 공유하세요.
 
 ### 2. 로스트아크 오픈 API 키 발급
 
