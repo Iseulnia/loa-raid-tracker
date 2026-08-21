@@ -25,6 +25,12 @@ export default async function NavBar() {
             대시보드
           </Link>
           <Link
+            href="/party"
+            className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+          >
+            공격대
+          </Link>
+          <Link
             href="/characters"
             className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
           >

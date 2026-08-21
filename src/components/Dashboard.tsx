@@ -46,6 +46,7 @@ function checkKey(characterId: string, raidId: string, gate: number) {
 }
 
 export default function Dashboard({
+  mode,
   currentUserId,
   weekKey,
   profiles,
@@ -54,6 +55,8 @@ export default function Dashboard({
   initialChecks,
   initialCharacterRaids,
 }: {
+  /** "mine": 내 캐릭터만 보여주는 개인 대시보드. "party": 친구 전체를 모아 보는 공용 탭. */
+  mode: "mine" | "party";
   currentUserId: string;
   weekKey: string;
   profiles: Profile[];
@@ -299,38 +302,45 @@ export default function Dashboard({
     return Math.round((earned / total) * 100);
   }
 
-  if (characters.length === 0) {
+  const visibleProfiles = mode === "mine" ? profiles.filter((p) => p.id === currentUserId) : profiles;
+  const hasAnyVisibleCharacters = visibleProfiles.some((p) => charactersByOwner.has(p.id));
+
+  if (!hasAnyVisibleCharacters) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-        등록된 캐릭터가 없어요. &lsquo;내 캐릭터&rsquo;에서 먼저 캐릭터를 불러와주세요.
+        {mode === "mine"
+          ? "등록된 캐릭터가 없어요. ‘내 캐릭터’에서 먼저 캐릭터를 불러와주세요."
+          : "아직 아무도 캐릭터를 등록하지 않았어요."}
       </p>
     );
   }
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={handleRefreshAllCombatPower}
-          disabled={combatPowerBusy !== null}
-          title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요."
-          className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
-        >
-          {combatPowerBusy === "refresh" ? "전투력 갱신 중..." : "전투력 전체 갱신"}
-        </button>
-        <button
-          type="button"
-          onClick={handleResetAllCombatPower}
-          disabled={combatPowerBusy !== null}
-          title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력 기록을 지금 값으로 강제로 맞춰요."
-          className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-red-800 dark:hover:text-red-400"
-        >
-          {combatPowerBusy === "reset" ? "초기화 중..." : "전투력 전체 초기화"}
-        </button>
-      </div>
+      {mode === "mine" && (
+        <>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshAllCombatPower}
+              disabled={combatPowerBusy !== null}
+              title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요."
+              className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
+            >
+              {combatPowerBusy === "refresh" ? "전투력 갱신 중..." : "전투력 전체 갱신"}
+            </button>
+            <button
+              type="button"
+              onClick={handleResetAllCombatPower}
+              disabled={combatPowerBusy !== null}
+              title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력 기록을 지금 값으로 강제로 맞춰요."
+              className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-red-800 dark:hover:text-red-400"
+            >
+              {combatPowerBusy === "reset" ? "초기화 중..." : "전투력 전체 초기화"}
+            </button>
+          </div>
 
-      <div className="flex flex-wrap gap-8 rounded-lg border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="flex flex-wrap gap-8 rounded-lg border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
         {(
           [
             {
@@ -377,15 +387,26 @@ export default function Dashboard({
             </div>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
 
-      {profiles
+      {visibleProfiles
         .filter((p) => charactersByOwner.has(p.id))
         .map((profile) => (
-          <section key={profile.id}>
+          <section
+            key={profile.id}
+            className={
+              mode === "party"
+                ? "rounded-xl border border-neutral-200 bg-neutral-50/60 p-4 dark:border-neutral-800 dark:bg-neutral-900/40"
+                : ""
+            }
+          >
             <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               {profile.nickname}
-              {profile.id === currentUserId && <span className="ml-1 text-neutral-400 dark:text-neutral-500">(나)</span>}
+              {mode === "party" && profile.id === currentUserId && (
+                <span className="ml-1 text-neutral-400 dark:text-neutral-500">(나)</span>
+              )}
             </h2>
             {groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
               <div key={group.label ?? "__unassigned"} className={groupIndex > 0 ? "mt-4" : ""}>
