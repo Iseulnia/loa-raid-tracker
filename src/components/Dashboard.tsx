@@ -403,7 +403,7 @@ export default function Dashboard({
                     return (
                       <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
                     <div className="mb-3 flex items-start justify-between">
-                      <div>
+                      <div className="flex items-start gap-2">
                         {(() => {
                           const icon = getClassIcon(character.class);
                           if (!icon) return null;
@@ -413,19 +413,21 @@ export default function Dashboard({
                               src={icon.url}
                               alt={character.class ?? ""}
                               style={{ objectPosition: icon.objectPosition ?? "center top" }}
-                              className="mb-1.5 h-10 w-10 rounded-full border border-neutral-200 object-cover dark:border-neutral-700"
+                              className="h-10 w-10 shrink-0 rounded-full border border-neutral-200 object-cover dark:border-neutral-700"
                             />
                           );
                         })()}
-                        <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                          {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
-                          {character.name}
-                        </div>
-                        <div className="text-xs text-neutral-400 dark:text-neutral-500">
-                          {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
-                          {character.combat_power != null &&
-                            ` · 전투력 ${character.combat_power.toLocaleString()}`}
-                          {!character.is_gold_earner && " · 비골드"}
+                        <div>
+                          <div className="font-medium text-neutral-900 dark:text-neutral-100">
+                            {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
+                            {character.name}
+                          </div>
+                          <div className="text-xs text-neutral-400 dark:text-neutral-500">
+                            {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
+                            {character.combat_power != null &&
+                              ` · 전투력 ${character.combat_power.toLocaleString()}`}
+                            {!character.is_gold_earner && " · 비골드"}
+                          </div>
                         </div>
                       </div>
                       {mine && (
