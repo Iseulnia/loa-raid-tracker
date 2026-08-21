@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { setCharacterRaids, type CharacterRaidSelection } from "@/app/actions";
@@ -152,7 +152,7 @@ export default function HomeworkEditor({
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg bg-white dark:bg-neutral-900">
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
           <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{characterName} 숙제 편집</h3>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200">
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200">
             닫기
           </button>
         </div>
@@ -181,7 +181,7 @@ export default function HomeworkEditor({
                   className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   <div className="font-medium text-amber-600 dark:text-amber-400">거래가능 골드 기준</div>
-                  <div className="text-neutral-400 dark:text-neutral-500">거래가능 골드가 제일 많은 조합으로 선택</div>
+                  <div className="text-neutral-400 dark:text-neutral-400">거래가능 골드가 제일 많은 조합으로 선택</div>
                 </button>
                 <button
                   type="button"
@@ -189,7 +189,7 @@ export default function HomeworkEditor({
                   className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   <div className="font-medium text-neutral-900 dark:text-neutral-100">거래가능 + 귀속 골드 기준</div>
-                  <div className="text-neutral-400 dark:text-neutral-500">종류 상관없이 총 골드가 제일 많은 조합으로 선택</div>
+                  <div className="text-neutral-400 dark:text-neutral-400">종류 상관없이 총 골드가 제일 많은 조합으로 선택</div>
                 </button>
               </div>
             )}
@@ -229,10 +229,10 @@ export default function HomeworkEditor({
                           </div>
                           <div className="flex items-center gap-1">
                             {tradeable > 0 && <span className="text-amber-600 dark:text-amber-400">{tradeable.toLocaleString()}G</span>}
-                            {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-600">/</span>}
+                            {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
                             {bound > 0 && <span className="text-indigo-600 dark:text-indigo-400">{bound.toLocaleString()}G</span>}
                           </div>
-                          {under && <div className="text-neutral-400 dark:text-neutral-500">레벨 미달</div>}
+                          {under && <div className="text-neutral-400 dark:text-neutral-400">레벨 미달</div>}
                         </button>
 
                         {active && (
@@ -244,7 +244,7 @@ export default function HomeworkEditor({
                               "mt-1.5 w-full rounded border px-1.5 py-0.5 text-[10px]",
                               goldEarning
                                 ? "border-emerald-400 bg-emerald-100 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-900 dark:text-emerald-300"
-                                : "border-neutral-300 bg-white text-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-500",
+                                : "border-neutral-300 bg-white text-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-400",
                             ].join(" ")}
                           >
                             {goldEarning ? "✓ 골드 받기" : "골드 받기"}
@@ -260,7 +260,7 @@ export default function HomeworkEditor({
         </div>
 
         <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4 dark:border-neutral-800">
-          <span className="text-xs text-neutral-400 dark:text-neutral-500">
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">
             골드 받기 {goldEarningIds.size}/{MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}
           </span>
           <div className="flex gap-2">

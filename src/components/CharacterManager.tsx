@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useTransition } from "react";
 import {
@@ -187,7 +187,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                   }
                 />
                 <span className="font-medium">{r.CharacterName}</span>
-                <span className="text-neutral-400 dark:text-neutral-500">
+                <span className="text-neutral-400 dark:text-neutral-400">
                   {r.CharacterClassName} · Lv.{r.ItemAvgLevel}
                   {r.CombatPower != null && ` · 전투력 ${r.CombatPower.toLocaleString()}`} · {r.ServerName}
                 </span>
@@ -208,14 +208,14 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       <div className="flex flex-col gap-6">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">등록된 캐릭터</h2>
         {characters.length === 0 ? (
-          <p className="text-sm text-neutral-400 dark:text-neutral-500">아직 등록된 캐릭터가 없어요.</p>
+          <p className="text-sm text-neutral-400 dark:text-neutral-400">아직 등록된 캐릭터가 없어요.</p>
         ) : (
           groupedCharacters.map(([label, group]) => (
             <div key={label || "__unassigned"}>
               <div className="mb-2 flex items-center gap-2 text-xs">
                 <span className="font-semibold text-neutral-600 dark:text-neutral-400">{label || "원정대 미지정"}</span>
                 {group.find((c) => c.is_main_character) && (
-                  <span className="text-neutral-400 dark:text-neutral-500">
+                  <span className="text-neutral-400 dark:text-neutral-400">
                     대표: {group.find((c) => c.is_main_character)!.name}
                   </span>
                 )}
@@ -231,7 +231,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                         {c.is_main_character && <span className="mr-1 text-amber-500">★</span>}
                         {c.name}
                       </span>{" "}
-                      <span className="text-neutral-400 dark:text-neutral-500">
+                      <span className="text-neutral-400 dark:text-neutral-400">
                         {c.class} · Lv.{c.item_level?.toLocaleString()}
                         {c.combat_power != null && ` · 전투력 ${c.combat_power.toLocaleString()}`} · {c.server}
                       </span>
@@ -241,7 +241,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                         <button
                           type="button"
                           onClick={() => handleSetMain(c)}
-                          className="text-xs text-neutral-400 hover:text-amber-500 dark:text-neutral-500"
+                          className="text-xs text-neutral-400 hover:text-amber-500 dark:text-neutral-400"
                         >
                           대표로 설정
                         </button>

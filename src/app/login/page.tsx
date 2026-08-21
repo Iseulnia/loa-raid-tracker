@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -163,7 +163,7 @@ export default function LoginPage() {
             setMode("forgot");
             setStatus("idle");
           }}
-          className="text-center text-xs text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
+          className="text-center text-xs text-neutral-400 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           비밀번호를 잊으셨나요?
         </button>
@@ -175,7 +175,7 @@ export default function LoginPage() {
             setMode("signin");
             setStatus("idle");
           }}
-          className="text-center text-xs text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
+          className="text-center text-xs text-neutral-400 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           ← 로그인으로 돌아가기
         </button>

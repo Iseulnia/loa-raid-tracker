@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -372,10 +372,10 @@ export default function Dashboard({
           const pct = percentOf(stat.earned, stat.total);
           return (
             <div key={stat.label} className="min-w-[170px]">
-              <div className="mb-1 text-xs text-neutral-400 dark:text-neutral-500">{stat.label}</div>
+              <div className="mb-1 text-xs text-neutral-400 dark:text-neutral-400">{stat.label}</div>
               <div className="flex items-baseline gap-1 text-sm">
                 <span className={`font-semibold ${stat.textClass}`}>{stat.earned.toLocaleString()}</span>
-                <span className="text-neutral-400 dark:text-neutral-500">/ {stat.total.toLocaleString()}</span>
+                <span className="text-neutral-400 dark:text-neutral-400">/ {stat.total.toLocaleString()}</span>
                 <span className={`ml-1 text-xs font-medium ${stat.textClass}`}>{pct}%</span>
               </div>
               <div className={`mt-1.5 h-1.5 w-full rounded-full ${stat.trackClass}`}>
@@ -405,13 +405,13 @@ export default function Dashboard({
             <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               {profile.nickname}
               {mode === "party" && profile.id === currentUserId && (
-                <span className="ml-1 text-neutral-400 dark:text-neutral-500">(나)</span>
+                <span className="ml-1 text-neutral-400 dark:text-neutral-400">(나)</span>
               )}
             </h2>
             {groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
               <div key={group.label ?? "__unassigned"} className={groupIndex > 0 ? "mt-4" : ""}>
                 {(group.label || allGroups.length > 1) && (
-                  <div className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-neutral-500">
+                  <div className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-neutral-400">
                     {group.label ?? "원정대 미지정"}
                   </div>
                 )}
@@ -443,7 +443,7 @@ export default function Dashboard({
                             {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
                             {character.name}
                           </div>
-                          <div className="text-xs text-neutral-400 dark:text-neutral-500">
+                          <div className="text-xs text-neutral-400 dark:text-neutral-400">
                             {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
                             {character.combat_power != null &&
                               ` · 전투력 ${character.combat_power.toLocaleString()}`}
@@ -463,7 +463,7 @@ export default function Dashboard({
                     </div>
 
                     {selectedRaids.length === 0 ? (
-                      <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                      <p className="text-xs text-neutral-400 dark:text-neutral-400">
                         등록된 숙제가 없어요.
                         {mine && " '숙제 편집'으로 추가해보세요."}
                       </p>
@@ -484,7 +484,7 @@ export default function Dashboard({
                               className={[
                                 "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs",
                                 cleared
-                                  ? "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-500"
+                                  ? "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
                                   : "border-neutral-200 bg-white font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200",
                                 !eligible ? "opacity-40" : "",
                                 mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
@@ -507,7 +507,7 @@ export default function Dashboard({
                                 </span>
                               </span>
                               {noGold ? (
-                                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500">
+                                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-400 dark:bg-neutral-800 dark:text-neutral-400">
                                   골드 없음 (4개 이상 선택)
                                 </span>
                               ) : (
@@ -516,13 +516,13 @@ export default function Dashboard({
                                   return (
                                     <span className={["flex items-center gap-1", cleared ? "line-through" : ""].join(" ")}>
                                       {tradeable > 0 && (
-                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-500" : "text-amber-600 dark:text-amber-400"}>
+                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-400" : "text-amber-600 dark:text-amber-400"}>
                                           {tradeable.toLocaleString()}G
                                         </span>
                                       )}
-                                      {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-600">/</span>}
+                                      {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
                                       {bound > 0 && (
-                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-500" : "text-indigo-600 dark:text-indigo-400"}>
+                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-400" : "text-indigo-600 dark:text-indigo-400"}>
                                           {bound.toLocaleString()}G
                                         </span>
                                       )}
@@ -538,10 +538,10 @@ export default function Dashboard({
 
                     {remaining !== null && selectedRaids.length > 0 && (
                       <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs dark:border-neutral-800">
-                        <span className="text-neutral-400 dark:text-neutral-500">받을 수 있는 골드</span>
+                        <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
                         <span className="flex items-center gap-1">
                           <span className="text-amber-600 dark:text-amber-400">{remaining.tradeable.toLocaleString()}G</span>
-                          <span className="text-neutral-300 dark:text-neutral-600">/</span>
+                          <span className="text-neutral-300 dark:text-neutral-500">/</span>
                           <span className="text-indigo-600 dark:text-indigo-400">{remaining.bound.toLocaleString()}G</span>
                         </span>
                       </div>

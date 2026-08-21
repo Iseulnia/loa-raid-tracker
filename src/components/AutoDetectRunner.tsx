@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
@@ -243,7 +243,7 @@ export default function AutoDetectRunner({
       <canvas ref={frameCanvasRef} className="hidden" />
 
       {lastMatchDebug && sharing && (
-        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-400">
           최근 비교: {lastMatchDebug.label} (유사도 {Math.round(lastMatchDebug.score * 100)}%, 기준{" "}
           {Math.round(MATCH_THRESHOLD * 100)}%)
         </p>
@@ -259,7 +259,7 @@ export default function AutoDetectRunner({
                 className={[
                   "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs",
                   e.undone
-                    ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-500"
+                    ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
                     : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
                 ].join(" ")}
               >

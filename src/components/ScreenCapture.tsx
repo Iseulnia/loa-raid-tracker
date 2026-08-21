@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -251,7 +251,7 @@ export default function ScreenCapture({
           ].join(" ")}
         />
         {!sharing && (
-          <p className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
+          <p className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-400">
             화면 공유를 시작하면 여기에 미리보기가 나와요. 로스트아크 창을 선택해주세요.
           </p>
         )}
@@ -333,7 +333,7 @@ export default function ScreenCapture({
       <div>
         <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">저장된 기준 이미지 ({templates.length}장)</h2>
         {templates.length === 0 ? (
-          <p className="text-sm text-neutral-400 dark:text-neutral-500">아직 저장된 기준 이미지가 없어요.</p>
+          <p className="text-sm text-neutral-400 dark:text-neutral-400">아직 저장된 기준 이미지가 없어요.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {templates.map((t) => {
@@ -349,7 +349,7 @@ export default function ScreenCapture({
                       className="aspect-video w-full bg-neutral-100 object-contain dark:bg-neutral-800"
                     />
                   ) : (
-                    <div className="flex aspect-video w-full items-center justify-center bg-neutral-100 text-xs text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500">
+                    <div className="flex aspect-video w-full items-center justify-center bg-neutral-100 text-xs text-neutral-400 dark:bg-neutral-800 dark:text-neutral-400">
                       미리보기 없음
                     </div>
                   )}
@@ -360,7 +360,7 @@ export default function ScreenCapture({
                         삭제
                       </button>
                     </div>
-                    {raid && <span className="text-neutral-400 dark:text-neutral-500">{raid.name} {raid.difficulty}</span>}
+                    {raid && <span className="text-neutral-400 dark:text-neutral-400">{raid.name} {raid.difficulty}</span>}
                   </div>
                 </div>
               );
