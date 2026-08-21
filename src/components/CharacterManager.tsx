@@ -6,6 +6,8 @@ import {
   toggleGoldEarner,
   deleteCharacter,
   setMainCharacter,
+  refreshCombatPower,
+  resetCombatPower,
   type ImportableCharacter,
 } from "@/app/actions";
 import type { LostArkSibling } from "@/lib/lostark";
@@ -40,6 +42,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
   const [error, setError] = useState("");
   const [characters, setCharacters] = useState(initialCharacters);
   const [, startTransition] = useTransition();
+  const [busyCombatPowerId, setBusyCombatPowerId] = useState<string | null>(null);
 
   const groupedCharacters = useMemo(() => {
     const groups = new Map<string, CharacterRow[]>();
@@ -121,6 +124,37 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
     setRoster(null);
     setMainName("");
     setExpeditionLabel("");
+  }
+
+  async function handleRefreshCombatPower(character: CharacterRow) {
+    setBusyCombatPowerId(character.id);
+    setError("");
+    try {
+      const newValue = await refreshCombatPower(character.id);
+      setCharacters((prev) => prev.map((x) => (x.id === character.id ? { ...x, combat_power: newValue } : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "전투력 갱신에 실패했어요.");
+    } finally {
+      setBusyCombatPowerId(null);
+    }
+  }
+
+  async function handleResetCombatPower(character: CharacterRow) {
+    const confirmed = window.confirm(
+      `${character.name}의 저장된 최고 전투력 기록을 지우고, 지금 API 값으로 다시 맞출까요? (스펙이 실제로 다운됐을 때만 사용하세요)`
+    );
+    if (!confirmed) return;
+
+    setBusyCombatPowerId(character.id);
+    setError("");
+    try {
+      const newValue = await resetCombatPower(character.id);
+      setCharacters((prev) => prev.map((x) => (x.id === character.id ? { ...x, combat_power: newValue } : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "전투력 초기화에 실패했어요.");
+    } finally {
+      setBusyCombatPowerId(null);
+    }
   }
 
   function handleSetMain(character: CharacterRow) {
@@ -237,6 +271,24 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRefreshCombatPower(c)}
+                        disabled={busyCombatPowerId === c.id}
+                        title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요."
+                        className="text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-50 dark:text-neutral-500 dark:hover:text-neutral-200"
+                      >
+                        {busyCombatPowerId === c.id ? "갱신 중..." : "전투력 갱신"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleResetCombatPower(c)}
+                        disabled={busyCombatPowerId === c.id}
+                        title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력 기록을 지금 값으로 강제로 맞춰요."
+                        className="text-xs text-neutral-400 hover:text-red-500 disabled:opacity-50 dark:text-neutral-500 dark:hover:text-red-400"
+                      >
+                        전투력 초기화
+                      </button>
                       {!c.is_main_character && (
                         <button
                           type="button"
