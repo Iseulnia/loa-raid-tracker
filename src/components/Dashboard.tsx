@@ -251,6 +251,21 @@ export default function Dashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characters, characterRaidMap, checkedSet, currentUserId]);
 
+  // 로그인한 사람 기준 "내 캐릭터 전체"에서 이번 주에 체크한 레이드 수 / 가야 하는 전체 레이드 수
+  const myRaidProgress = useMemo(() => {
+    let checked = 0;
+    let total = 0;
+    for (const character of characters) {
+      if (character.owner_id !== currentUserId) continue;
+      for (const raid of selectedRaidsFor(character)) {
+        total++;
+        if (isRaidClearedAtAll(character.id, raid)) checked++;
+      }
+    }
+    return { checked, total };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characters, characterRaidMap, checkedSet, currentUserId]);
+
   function percentOf(earned: number, total: number): number {
     if (total <= 0) return 0;
     return Math.round((earned / total) * 100);
@@ -269,6 +284,14 @@ export default function Dashboard({
       <div className="flex flex-wrap gap-8 rounded-lg border border-neutral-200 bg-white px-4 py-3">
         {(
           [
+            {
+              label: "체크한 레이드",
+              earned: myRaidProgress.checked,
+              total: myRaidProgress.total,
+              textClass: "text-emerald-600",
+              barClass: "bg-emerald-500",
+              trackClass: "bg-emerald-100",
+            },
             {
               label: "거래가능 골드",
               earned: myGoldProgress.earnedTradeable,
@@ -409,8 +432,9 @@ export default function Dashboard({
                     {remaining !== null && selectedRaids.length > 0 && (
                       <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs">
                         <span className="text-neutral-400">받을 수 있는 골드</span>
-                        <span className="flex gap-2">
+                        <span className="flex items-center gap-1">
                           <span className="text-amber-600">{remaining.tradeable.toLocaleString()}G</span>
+                          <span className="text-neutral-300">/</span>
                           <span className="text-indigo-600">{remaining.bound.toLocaleString()}G</span>
                         </span>
                       </div>
