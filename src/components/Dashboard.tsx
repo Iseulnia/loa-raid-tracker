@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
 import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
-import { getClassIconUrl } from "@/lib/classIcons";
+import { getClassIcon } from "@/lib/classIcons";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -404,14 +404,19 @@ export default function Dashboard({
                       <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
                     <div className="mb-3 flex items-start justify-between">
                       <div>
-                        {getClassIconUrl(character.class) && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={getClassIconUrl(character.class)!}
-                            alt={character.class ?? ""}
-                            className="mb-1.5 h-10 w-10 rounded-full border border-neutral-200 object-cover object-top dark:border-neutral-700"
-                          />
-                        )}
+                        {(() => {
+                          const icon = getClassIcon(character.class);
+                          if (!icon) return null;
+                          return (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={icon.url}
+                              alt={character.class ?? ""}
+                              style={{ objectPosition: icon.objectPosition ?? "center top" }}
+                              className="mb-1.5 h-10 w-10 rounded-full border border-neutral-200 object-cover dark:border-neutral-700"
+                            />
+                          );
+                        })()}
                         <div className="font-medium text-neutral-900 dark:text-neutral-100">
                           {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
                           {character.name}
