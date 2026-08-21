@@ -74,14 +74,18 @@ export type Database = {
       raid_clear_templates: {
         Row: {
           id: string;
-          raid_id: string;
+          raid_id: string | null;
+          template_type: string;
+          crop: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           storage_path: string;
           created_by: string;
           created_at: string;
         };
         Insert: {
           id?: string;
-          raid_id: string;
+          raid_id?: string | null;
+          template_type?: string;
+          crop?: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           storage_path: string;
           created_by: string;
           created_at?: string;

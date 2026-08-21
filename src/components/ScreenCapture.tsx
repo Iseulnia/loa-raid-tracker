@@ -2,10 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { saveRaidClearTemplate, deleteRaidClearTemplate } from "@/app/actions";
+import { saveRaidClearTemplate, deleteRaidClearTemplate, type TemplateType } from "@/app/actions";
 
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
-type TemplateRow = { id: string; raid_id: string; storage_path: string; created_at: string; url: string | null };
+type CropPct = { xPct: number; yPct: number; wPct: number; hPct: number };
+type TemplateRow = {
+  id: string;
+  raid_id: string | null;
+  template_type: string;
+  crop: CropPct | null;
+  storage_path: string;
+  created_at: string;
+  url: string | null;
+};
+
+const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
+  clear_banner: "던전 클리어 배너",
+  result_screen: "레이드 결과화면(레이드명)",
+  gate_checkmark: "관문 체크마크",
+};
+
+type Rect = { x: number; y: number; w: number; h: number };
 
 export default function ScreenCapture({
   raids,
@@ -15,10 +32,15 @@ export default function ScreenCapture({
   initialTemplates: TemplateRow[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const frozenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [sharing, setSharing] = useState(false);
+  const [frozen, setFrozen] = useState(false);
+  const [selection, setSelection] = useState<Rect | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+
+  const [templateType, setTemplateType] = useState<TemplateType>("clear_banner");
   const [selectedRaidId, setSelectedRaidId] = useState(raids[0]?.id ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -46,7 +68,6 @@ export default function ScreenCapture({
         await videoRef.current.play();
       }
       setSharing(true);
-      // 사용자가 브라우저 자체 "공유 중지" 버튼을 눌렀을 때도 상태를 맞춰준다.
       stream.getVideoTracks()[0]?.addEventListener("ended", stopShare);
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
@@ -58,44 +79,117 @@ export default function ScreenCapture({
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setSharing(false);
+    setFrozen(false);
+    setSelection(null);
   }
 
-  async function captureAndSave() {
+  function captureFrame() {
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !selectedRaidId) return;
-
+    const canvas = frozenCanvasRef.current;
+    if (!video || !canvas) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setFrozen(true);
+    setSelection(null);
+  }
+
+  function retake() {
+    setFrozen(false);
+    setSelection(null);
+  }
+
+  function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
+    const canvas = frozenCanvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: Math.max(0, Math.min(canvas.width, (e.clientX - rect.left) * scaleX)),
+      y: Math.max(0, Math.min(canvas.height, (e.clientY - rect.top) * scaleY)),
+    };
+  }
+
+  function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!frozen) return;
+    const p = canvasPointFromEvent(e);
+    setDragStart(p);
+    setSelection({ x: p.x, y: p.y, w: 0, h: 0 });
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!dragStart) return;
+    const p = canvasPointFromEvent(e);
+    setSelection({
+      x: Math.min(dragStart.x, p.x),
+      y: Math.min(dragStart.y, p.y),
+      w: Math.abs(p.x - dragStart.x),
+      h: Math.abs(p.y - dragStart.y),
+    });
+  }
+
+  function handleMouseUp() {
+    setDragStart(null);
+  }
+
+  async function saveSelection() {
+    const canvas = frozenCanvasRef.current;
+    if (!canvas || !selection || selection.w < 4 || selection.h < 4) {
+      setError("저장할 영역을 드래그로 먼저 선택해주세요.");
+      return;
+    }
+    if (templateType === "result_screen" && !selectedRaidId) {
+      setError("레이드 결과화면 유형은 어떤 레이드인지 선택해주세요.");
+      return;
+    }
 
     setSaving(true);
     setError("");
     try {
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      const cropCanvas = document.createElement("canvas");
+      cropCanvas.width = selection.w;
+      cropCanvas.height = selection.h;
+      const ctx = cropCanvas.getContext("2d");
+      if (!ctx) throw new Error("캡처에 실패했어요.");
+      ctx.drawImage(canvas, selection.x, selection.y, selection.w, selection.h, 0, 0, selection.w, selection.h);
+
+      const blob = await new Promise<Blob | null>((resolve) => cropCanvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("이미지 캡처에 실패했어요.");
 
+      const crop: CropPct = {
+        xPct: selection.x / canvas.width,
+        yPct: selection.y / canvas.height,
+        wPct: selection.w / canvas.width,
+        hPct: selection.h / canvas.height,
+      };
+      const raidId = templateType === "result_screen" ? selectedRaidId : null;
+
       const supabase = createClient();
-      const path = `${selectedRaidId}/${Date.now()}.png`;
+      const path = `${templateType}/${raidId ?? "shared"}/${Date.now()}.png`;
       const { error: uploadError } = await supabase.storage
         .from("raid-clear-templates")
         .upload(path, blob, { contentType: "image/png" });
       if (uploadError) throw uploadError;
 
-      await saveRaidClearTemplate(selectedRaidId, path);
+      await saveRaidClearTemplate({ raidId, templateType, crop, storagePath: path });
 
       setTemplates((prev) => [
         {
           id: `temp-${Date.now()}`,
-          raid_id: selectedRaidId,
+          raid_id: raidId,
+          template_type: templateType,
+          crop,
           storage_path: path,
           created_at: new Date().toISOString(),
           url: URL.createObjectURL(blob),
         },
         ...prev,
       ]);
+
+      setFrozen(false);
+      setSelection(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 중 오류가 발생했어요.");
     } finally {
@@ -134,26 +228,15 @@ export default function ScreenCapture({
             </button>
           )}
 
-          <select
-            value={selectedRaidId}
-            onChange={(e) => setSelectedRaidId(e.target.value)}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
-          >
-            {raids.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} {r.difficulty}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={captureAndSave}
-            disabled={!sharing || saving || !selectedRaidId}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-          >
-            {saving ? "저장 중..." : "지금 화면을 기준 이미지로 저장"}
-          </button>
+          {sharing && !frozen && (
+            <button
+              type="button"
+              onClick={captureFrame}
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              지금 프레임 캡처
+            </button>
+          )}
         </div>
 
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
@@ -162,16 +245,89 @@ export default function ScreenCapture({
           ref={videoRef}
           muted
           playsInline
-          className={["w-full rounded-md border border-neutral-200 bg-neutral-900", sharing ? "" : "hidden"].join(
-            " "
-          )}
+          className={[
+            "w-full rounded-md border border-neutral-200 bg-neutral-900",
+            sharing && !frozen ? "" : "hidden",
+          ].join(" ")}
         />
         {!sharing && (
           <p className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-400">
             화면 공유를 시작하면 여기에 미리보기가 나와요. 로스트아크 창을 선택해주세요.
           </p>
         )}
-        <canvas ref={canvasRef} className="hidden" />
+
+        {frozen && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-neutral-500">
+              필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등
+              최소한만 딱 자르는 게 좋아요).
+            </p>
+            <div className="relative w-full overflow-hidden rounded-md border border-neutral-200">
+              <canvas
+                ref={frozenCanvasRef}
+                className="w-full cursor-crosshair"
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+              />
+              {selection && frozenCanvasRef.current && (
+                <div
+                  className="pointer-events-none absolute border-2 border-emerald-400 bg-emerald-400/20"
+                  style={{
+                    left: `${(selection.x / frozenCanvasRef.current.width) * 100}%`,
+                    top: `${(selection.y / frozenCanvasRef.current.height) * 100}%`,
+                    width: `${(selection.w / frozenCanvasRef.current.width) * 100}%`,
+                    height: `${(selection.h / frozenCanvasRef.current.height) * 100}%`,
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={templateType}
+                onChange={(e) => setTemplateType(e.target.value as TemplateType)}
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+              >
+                {(Object.keys(TEMPLATE_TYPE_LABEL) as TemplateType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {TEMPLATE_TYPE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+
+              {templateType === "result_screen" && (
+                <select
+                  value={selectedRaidId}
+                  onChange={(e) => setSelectedRaidId(e.target.value)}
+                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                >
+                  {raids.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} {r.difficulty}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <button
+                type="button"
+                onClick={retake}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700"
+              >
+                다시 캡처
+              </button>
+              <button
+                type="button"
+                onClick={saveSelection}
+                disabled={saving}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {saving ? "저장 중..." : "선택 영역 저장"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div>
@@ -181,22 +337,30 @@ export default function ScreenCapture({
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {templates.map((t) => {
-              const raid = raidsById.get(t.raid_id);
+              const raid = t.raid_id ? raidsById.get(t.raid_id) : null;
+              const typeLabel = TEMPLATE_TYPE_LABEL[t.template_type as TemplateType] ?? t.template_type;
               return (
                 <div key={t.id} className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
                   {t.url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.url} alt={raid ? `${raid.name} ${raid.difficulty}` : "레이드 클리어 화면"} className="aspect-video w-full object-cover" />
+                    <img
+                      src={t.url}
+                      alt={typeLabel}
+                      className="aspect-video w-full bg-neutral-100 object-contain"
+                    />
                   ) : (
                     <div className="flex aspect-video w-full items-center justify-center bg-neutral-100 text-xs text-neutral-400">
                       미리보기 없음
                     </div>
                   )}
-                  <div className="flex items-center justify-between px-2 py-1.5 text-xs">
-                    <span className="text-neutral-600">{raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음"}</span>
-                    <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline">
-                      삭제
-                    </button>
+                  <div className="flex flex-col gap-0.5 px-2 py-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-700">{typeLabel}</span>
+                      <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline">
+                        삭제
+                      </button>
+                    </div>
+                    {raid && <span className="text-neutral-400">{raid.name} {raid.difficulty}</span>}
                   </div>
                 </div>
               );

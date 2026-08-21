@@ -85,7 +85,12 @@ on conflict (id) do nothing;
 
 create table if not exists public.raid_clear_templates (
   id uuid primary key default gen_random_uuid(),
-  raid_id uuid not null references public.raids (id) on delete cascade,
+  -- 'clear_banner'(관문마다 뜨는 "던전 클리어" 배너)와 'gate_checkmark'(관문 체크 아이콘)는
+  -- 특정 레이드에 종속되지 않아 raid_id가 비어있을 수 있음. 'result_screen'(결과화면의 레이드명/난이도)만 필수.
+  raid_id uuid references public.raids (id) on delete cascade,
+  template_type text not null default 'result_screen'
+    check (template_type in ('clear_banner', 'result_screen', 'gate_checkmark')),
+  crop jsonb, -- 캡처한 원본 프레임 대비 상대 위치 {xPct,yPct,wPct,hPct} (0~1)
   storage_path text not null,
   created_by uuid not null references public.profiles (id),
   created_at timestamptz not null default now()
