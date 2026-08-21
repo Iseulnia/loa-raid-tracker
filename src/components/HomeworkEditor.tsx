@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { setCharacterRaids } from "@/app/actions";
-import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
+import { splitGold, difficultyColorClass, selectGoldEarningRaids } from "@/lib/raidDisplay";
 
 type RaidRow = {
   id: string;
@@ -54,6 +54,17 @@ export default function HomeworkEditor({
   });
   const [saving, setSaving] = useState(false);
 
+  const raidsById = useMemo(() => new Map(allRaids.map((r) => [r.id, r])), [allRaids]);
+
+  // 캐릭터 하나당 골드를 받을 수 있는 레이드는 최대 3개 (골드 높은 순). 지금 고른 것들 중 실시간으로 계산.
+  const goldEarningIds = useMemo(() => {
+    const selected = Array.from(choicePerGroup.values())
+      .filter((id): id is string => id !== null)
+      .map((id) => raidsById.get(id))
+      .filter((r): r is RaidRow => r !== undefined);
+    return new Set(selectGoldEarningRaids(selected).map((r) => r.id));
+  }, [choicePerGroup, raidsById]);
+
   function pick(groupName: string, raidId: string) {
     setChoicePerGroup((prev) => {
       const next = new Map(prev);
@@ -87,6 +98,9 @@ export default function HomeworkEditor({
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <p className="mb-4 text-xs text-neutral-500">
             레이드마다 난이도를 하나만 고를 수 있어요. 다시 누르면 선택이 풀립니다.
+            <br />
+            골드는 캐릭터 하나당 최대 3개까지만 나와요 (골드 높은 순). 4개 이상 고르면 나머지는 골드 없이 진행만
+            체크하는 용도예요.
           </p>
           <div className="flex flex-col gap-4">
             {groups.map(([groupName, raidsInGroup]) => (
@@ -96,6 +110,7 @@ export default function HomeworkEditor({
                   {raidsInGroup.map((raid) => {
                     const active = choicePerGroup.get(groupName) === raid.id;
                     const under = (characterItemLevel ?? 0) < raid.min_item_level;
+                    const noGold = active && !goldEarningIds.has(raid.id);
                     const { bound, tradeable } = splitGold(raid);
                     return (
                       <button
@@ -112,12 +127,16 @@ export default function HomeworkEditor({
                         <div className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}>
                           {raid.difficulty}
                         </div>
-                        <div className="flex items-center gap-1">
-                          {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
-                          {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
-                          {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
-                          {under && <span className="ml-1 text-neutral-400">· 레벨 미달</span>}
-                        </div>
+                        {noGold ? (
+                          <div className="text-neutral-400">골드 없음</div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
+                            {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
+                            {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
+                          </div>
+                        )}
+                        {under && <div className="text-neutral-400">레벨 미달</div>}
                       </button>
                     );
                   })}

@@ -2,6 +2,15 @@
 
 export type RaidLike = { name: string; gold_per_gate: number[] };
 
+/** 캐릭터 하나가 주간 골드를 받을 수 있는 레이드는 최대 3개. 여러 개를 골랐다면 골드가 높은 순으로 3개까지만 인정된다. */
+export const MAX_GOLD_EARNING_RAIDS_PER_CHARACTER = 3;
+
+export function selectGoldEarningRaids<T extends RaidLike>(selected: T[]): T[] {
+  return [...selected]
+    .sort((a, b) => totalGold(b) - totalGold(a))
+    .slice(0, MAX_GOLD_EARNING_RAIDS_PER_CHARACTER);
+}
+
 /**
  * 귀속/거래가능 골드 분할 규칙
  * - 성당: 전체 단계(1/2/3단계) 100% 귀속

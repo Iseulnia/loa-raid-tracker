@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
-import { totalGold, splitGold, difficultyColorClass } from "@/lib/raidDisplay";
+import { totalGold, splitGold, difficultyColorClass, selectGoldEarningRaids } from "@/lib/raidDisplay";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -177,11 +177,17 @@ export default function Dashboard({
     return raids.filter((r) => ids.has(r.id)).sort((a, b) => a.sort_order - b.sort_order);
   }
 
+  /** 캐릭터 하나당 골드를 받을 수 있는 레이드는 최대 3개 (골드 높은 순). 그 외 선택한 레이드는 골드 계산에서 빠진다. */
+  function goldEarningRaidIdsFor(character: CharacterRow): Set<string> {
+    return new Set(selectGoldEarningRaids(selectedRaidsFor(character)).map((r) => r.id));
+  }
+
   function remainingSplitFor(character: CharacterRow): { bound: number; tradeable: number } | null {
     if (!character.is_gold_earner) return null;
+    const goldEarningIds = goldEarningRaidIdsFor(character);
     return selectedRaidsFor(character).reduce(
       (acc, raid) => {
-        if (isRaidClearedAtAll(character.id, raid)) return acc;
+        if (!goldEarningIds.has(raid.id) || isRaidClearedAtAll(character.id, raid)) return acc;
         const split = splitGold(raid);
         return { bound: acc.bound + split.bound, tradeable: acc.tradeable + split.tradeable };
       },
@@ -190,7 +196,8 @@ export default function Dashboard({
   }
 
   // 로그인한 사람 기준 "내 캐릭터 전체"의 획득한 골드 / 총 획득 가능한 골드.
-  // 총 획득 가능 골드는 숙제로 고른 레이드 기준으로 고정되고, 체크 여부와 상관없이 변하지 않는다.
+  // 총 획득 가능 골드는 숙제로 고른 레이드 중 실제로 골드가 나오는(캐릭터당 상위 3개) 레이드 기준으로 고정되고,
+  // 체크 여부와 상관없이 변하지 않는다.
   const myGoldProgress = useMemo(() => {
     const progress = {
       earnedBound: 0,
@@ -200,7 +207,9 @@ export default function Dashboard({
     };
     for (const character of characters) {
       if (character.owner_id !== currentUserId || !character.is_gold_earner) continue;
+      const goldEarningIds = goldEarningRaidIdsFor(character);
       for (const raid of selectedRaidsFor(character)) {
+        if (!goldEarningIds.has(raid.id)) continue;
         const split = splitGold(raid);
         progress.totalBound += split.bound;
         progress.totalTradeable += split.tradeable;
@@ -283,6 +292,7 @@ export default function Dashboard({
                 const mine = character.owner_id === currentUserId;
                 const selectedRaids = selectedRaidsFor(character);
                 const remaining = remainingSplitFor(character);
+                const goldEarningIds = goldEarningRaidIdsFor(character);
                 return (
                   <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4">
                     <div className="mb-3 flex items-start justify-between">
@@ -317,6 +327,7 @@ export default function Dashboard({
                           const eligible = (character.item_level ?? 0) >= raid.min_item_level;
                           const cleared = isRaidClearedAtAll(character.id, raid);
                           const disabled = !mine || !eligible;
+                          const noGold = character.is_gold_earner && !goldEarningIds.has(raid.id);
                           return (
                             <button
                               key={raid.id}
@@ -344,7 +355,13 @@ export default function Dashboard({
                                 </span>
                                 {raid.name} <span className={difficultyColorClass(raid.difficulty)}>{raid.difficulty}</span>
                               </span>
-                              <span className="text-neutral-400">{totalGold(raid).toLocaleString()}G</span>
+                              {noGold ? (
+                                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                                  골드 없음 (4개 이상 선택)
+                                </span>
+                              ) : (
+                                <span className="text-neutral-400">{totalGold(raid).toLocaleString()}G</span>
+                              )}
                             </button>
                           );
                         })}
