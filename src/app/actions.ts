@@ -80,58 +80,62 @@ export async function setMainCharacter(characterId: string) {
   revalidatePath("/");
 }
 
+export type CombatPowerBulkResult = { characterId: string; combatPower: number | null }[];
+
 /**
  * 로스트아크는 카오스던전 세팅과 레이드 세팅이 따로 있어서, API가 갱신되는 순간 카던 세팅 중이면
  * 전투력이 실제 레이드 전투력보다 낮게 잡힐 수 있다. 그래서 새로 받은 값이 기존 저장값보다 높을 때만 갱신한다
- * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음).
+ * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음). 내 캐릭터 전체를 한 번에 처리한다.
  */
-export async function refreshCombatPower(characterId: string): Promise<number | null> {
+export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
-  const { data: character, error: fetchError } = await supabase
+  const { data: myCharacters, error: fetchError } = await supabase
     .from("characters")
-    .select("name, combat_power")
-    .eq("id", characterId)
-    .eq("owner_id", user.id)
-    .single();
-  if (fetchError || !character) throw new Error(fetchError?.message ?? "캐릭터를 찾을 수 없어요.");
+    .select("id, name, combat_power")
+    .eq("owner_id", user.id);
+  if (fetchError) throw new Error(fetchError.message);
 
-  const fresh = await fetchCombatPower(character.name);
-  if (fresh === null) {
-    return character.combat_power;
-  }
-
-  const shouldUpdate = character.combat_power === null || fresh > character.combat_power;
-  if (shouldUpdate) {
-    const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", characterId);
-    if (error) throw new Error(error.message);
-  }
+  const results = await Promise.all(
+    (myCharacters ?? []).map(async (character) => {
+      const fresh = await fetchCombatPower(character.name);
+      const shouldUpdate = fresh !== null && (character.combat_power === null || fresh > character.combat_power);
+      if (shouldUpdate) {
+        const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", character.id);
+        if (error) throw new Error(error.message);
+      }
+      return { characterId: character.id, combatPower: shouldUpdate ? fresh : character.combat_power };
+    })
+  );
 
   revalidatePath("/characters");
   revalidatePath("/");
-  return shouldUpdate ? fresh : character.combat_power;
+  return results;
 }
 
 /** 실제로 장비를 빼거나 스펙이 다운된 경우, 예전에 기록된 "최고 전투력"이 더 이상 맞지 않을 수 있어서
- *  최댓값 비교 없이 현재 API 값으로 강제로 덮어쓴다. */
-export async function resetCombatPower(characterId: string): Promise<number | null> {
+ *  최댓값 비교 없이 내 캐릭터 전체를 현재 API 값으로 강제로 덮어쓴다. */
+export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
-  const { data: character, error: fetchError } = await supabase
+  const { data: myCharacters, error: fetchError } = await supabase
     .from("characters")
-    .select("name")
-    .eq("id", characterId)
-    .eq("owner_id", user.id)
-    .single();
-  if (fetchError || !character) throw new Error(fetchError?.message ?? "캐릭터를 찾을 수 없어요.");
+    .select("id, name")
+    .eq("owner_id", user.id);
+  if (fetchError) throw new Error(fetchError.message);
 
-  const fresh = await fetchCombatPower(character.name);
-  const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", characterId);
-  if (error) throw new Error(error.message);
+  const results = await Promise.all(
+    (myCharacters ?? []).map(async (character) => {
+      const fresh = await fetchCombatPower(character.name);
+      const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", character.id);
+      if (error) throw new Error(error.message);
+      return { characterId: character.id, combatPower: fresh };
+    })
+  );
 
   revalidatePath("/characters");
   revalidatePath("/");
-  return fresh;
+  return results;
 }
 
 export async function toggleGoldEarner(characterId: string, isGoldEarner: boolean) {

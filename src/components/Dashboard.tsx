@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { setRaidCheck } from "@/app/actions";
+import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
 import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 
@@ -75,6 +76,32 @@ export default function Dashboard({
   });
   const [editingCharacter, setEditingCharacter] = useState<CharacterRow | null>(null);
   const [, startTransition] = useTransition();
+  const [combatPowerBusy, setCombatPowerBusy] = useState<"refresh" | "reset" | null>(null);
+  const router = useRouter();
+
+  async function handleRefreshAllCombatPower() {
+    setCombatPowerBusy("refresh");
+    try {
+      await refreshAllCombatPower();
+      router.refresh();
+    } finally {
+      setCombatPowerBusy(null);
+    }
+  }
+
+  async function handleResetAllCombatPower() {
+    const confirmed = window.confirm(
+      "내 캐릭터 전체의 저장된 최고 전투력 기록을 지우고, 지금 API 값으로 다시 맞출까요? (스펙이 실제로 다운됐을 때만 사용하세요)"
+    );
+    if (!confirmed) return;
+    setCombatPowerBusy("reset");
+    try {
+      await resetAllCombatPower();
+      router.refresh();
+    } finally {
+      setCombatPowerBusy(null);
+    }
+  }
 
   // 다른 친구가 체크하거나 숙제를 편집하면 실시간으로 반영
   useEffect(() => {
@@ -281,6 +308,27 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col gap-8">
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleRefreshAllCombatPower}
+          disabled={combatPowerBusy !== null}
+          title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요."
+          className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
+        >
+          {combatPowerBusy === "refresh" ? "전투력 갱신 중..." : "전투력 전체 갱신"}
+        </button>
+        <button
+          type="button"
+          onClick={handleResetAllCombatPower}
+          disabled={combatPowerBusy !== null}
+          title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력 기록을 지금 값으로 강제로 맞춰요."
+          className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-red-800 dark:hover:text-red-400"
+        >
+          {combatPowerBusy === "reset" ? "초기화 중..." : "전투력 전체 초기화"}
+        </button>
+      </div>
+
       <div className="flex flex-wrap gap-8 rounded-lg border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
         {(
           [
