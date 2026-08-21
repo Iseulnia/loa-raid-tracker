@@ -71,6 +71,31 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["raids"]["Insert"]>;
         Relationships: [];
       };
+      raid_clear_templates: {
+        Row: {
+          id: string;
+          raid_id: string;
+          storage_path: string;
+          created_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          raid_id: string;
+          storage_path: string;
+          created_by: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["raid_clear_templates"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "raid_clear_templates_raid_id_fkey";
+            columns: ["raid_id"];
+            referencedRelation: "raids";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       character_raids: {
         Row: {
           id: string;
@@ -149,4 +174,5 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Character = Database["public"]["Tables"]["characters"]["Row"];
 export type Raid = Database["public"]["Tables"]["raids"]["Row"];
 export type CharacterRaid = Database["public"]["Tables"]["character_raids"]["Row"];
+export type RaidClearTemplate = Database["public"]["Tables"]["raid_clear_templates"]["Row"];
 export type WeeklyCheck = Database["public"]["Tables"]["weekly_checks"]["Row"];

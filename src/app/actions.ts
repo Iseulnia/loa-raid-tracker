@@ -130,3 +130,25 @@ export async function setCharacterRaids(characterId: string, selections: Charact
 
   revalidatePath("/");
 }
+
+/** 화면공유로 캡처한 프레임을 Storage에 올린 뒤, 어떤 레이드의 기준 이미지인지 DB에 기록한다. */
+export async function saveRaidClearTemplate(raidId: string, storagePath: string) {
+  const { supabase, user } = await requireUser();
+  const { error } = await supabase
+    .from("raid_clear_templates")
+    .insert({ raid_id: raidId, storage_path: storagePath, created_by: user.id });
+  if (error) throw new Error(error.message);
+  revalidatePath("/auto-detect");
+}
+
+export async function deleteRaidClearTemplate(templateId: string, storagePath: string) {
+  const { supabase } = await requireUser();
+  const { error: storageError } = await supabase.storage
+    .from("raid-clear-templates")
+    .remove([storagePath]);
+  if (storageError) throw new Error(storageError.message);
+
+  const { error } = await supabase.from("raid_clear_templates").delete().eq("id", templateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/auto-detect");
+}

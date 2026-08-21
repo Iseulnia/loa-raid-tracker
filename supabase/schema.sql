@@ -76,6 +76,24 @@ create table if not exists public.character_raids (
 create index if not exists character_raids_character_idx on public.character_raids (character_id);
 
 -- ─────────────────────────────────────────────
+-- 3-2. raid_clear_templates: 화면공유 자동 감지용 "레이드 클리어 화면" 기준 이미지
+--    사용자가 화면공유 중 실제 클리어 화면을 캡처해서 저장한 것. 이후 라이브 화면과 비교하는 데 쓴다.
+-- ─────────────────────────────────────────────
+insert into storage.buckets (id, name, public)
+values ('raid-clear-templates', 'raid-clear-templates', false)
+on conflict (id) do nothing;
+
+create table if not exists public.raid_clear_templates (
+  id uuid primary key default gen_random_uuid(),
+  raid_id uuid not null references public.raids (id) on delete cascade,
+  storage_path text not null,
+  created_by uuid not null references public.profiles (id),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists raid_clear_templates_raid_idx on public.raid_clear_templates (raid_id);
+
+-- ─────────────────────────────────────────────
 -- 4. weekly_checks: 주차별 체크 기록
 --    week_key는 코드에서 계산 (수요일 06:00 KST 기준 그 주의 수요일 날짜, 'YYYY-MM-DD')
 --    → 새 주가 되면 그냥 해당 week_key row가 없으므로 자동으로 "미체크" 상태가 됨 (별도 리셋 배치 불필요)
@@ -107,6 +125,7 @@ alter table public.profiles enable row level security;
 alter table public.characters enable row level security;
 alter table public.raids enable row level security;
 alter table public.character_raids enable row level security;
+alter table public.raid_clear_templates enable row level security;
 alter table public.weekly_checks enable row level security;
 
 create policy "profiles_select_all" on public.profiles
@@ -144,6 +163,20 @@ create policy "character_raids_delete_own" on public.character_raids
       where c.id = character_id and c.owner_id = auth.uid()
     )
   );
+
+create policy "raid_clear_templates_select_all" on public.raid_clear_templates
+  for select using (auth.role() = 'authenticated');
+create policy "raid_clear_templates_insert_own" on public.raid_clear_templates
+  for insert with check (auth.uid() = created_by);
+create policy "raid_clear_templates_delete_own" on public.raid_clear_templates
+  for delete using (auth.uid() = created_by);
+
+create policy "raid_clear_template_files_select" on storage.objects
+  for select using (bucket_id = 'raid-clear-templates' and auth.role() = 'authenticated');
+create policy "raid_clear_template_files_insert" on storage.objects
+  for insert with check (bucket_id = 'raid-clear-templates' and auth.role() = 'authenticated');
+create policy "raid_clear_template_files_delete" on storage.objects
+  for delete using (bucket_id = 'raid-clear-templates' and auth.role() = 'authenticated');
 
 create policy "checks_select_all" on public.weekly_checks
   for select using (auth.role() = 'authenticated');
