@@ -2,19 +2,31 @@
 
 export type RaidLike = { name: string; gold_per_gate: number[] };
 
-/** 성당(전체 단계)·세르카·4막·종막은 클리어 골드의 절반이 귀속, 절반이 거래가능. 그 외(벨가르딘 등)는 전부 거래가능. */
-const HALF_SPLIT_RAID_NAMES = new Set(["성당", "세르카", "4막", "종막"]);
+/**
+ * 귀속/거래가능 골드 분할 규칙
+ * - 성당: 전체 단계(1/2/3단계) 100% 귀속
+ * - 4막·종막·세르카: 노말만 절반 귀속 + 절반 거래가능 (하드/나이트메어는 아래 기본값으로 전부 거래가능)
+ * - 그 외(위에서 언급 안 된 레이드·난이도, 벨가르딘 등): 전부 거래가능
+ */
+const FULLY_BOUND_RAID_NAMES = new Set(["성당"]);
+const HALF_SPLIT_ON_NORMAL_RAID_NAMES = new Set(["4막", "종막", "세르카"]);
 
 export function totalGold(raid: RaidLike): number {
   return raid.gold_per_gate.reduce((sum, g) => sum + g, 0);
 }
 
-export function splitGold(raid: RaidLike): { bound: number; tradeable: number } {
+export function splitGold(raid: RaidLike & { difficulty: string }): { bound: number; tradeable: number } {
   const total = totalGold(raid);
-  if (HALF_SPLIT_RAID_NAMES.has(raid.name)) {
+
+  if (FULLY_BOUND_RAID_NAMES.has(raid.name)) {
+    return { bound: total, tradeable: 0 };
+  }
+
+  if (HALF_SPLIT_ON_NORMAL_RAID_NAMES.has(raid.name) && raid.difficulty === "노말") {
     const bound = Math.round(total / 2);
     return { bound, tradeable: total - bound };
   }
+
   return { bound: 0, tradeable: total };
 }
 

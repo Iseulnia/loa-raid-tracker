@@ -112,10 +112,11 @@ export default function HomeworkEditor({
                         <div className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}>
                           {raid.difficulty}
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
+                          {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
                           {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
-                          {under && <span className="text-neutral-400">· 레벨 미달</span>}
+                          {under && <span className="ml-1 text-neutral-400">· 레벨 미달</span>}
                         </div>
                       </button>
                     );
