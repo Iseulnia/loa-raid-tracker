@@ -189,19 +189,35 @@ export default function Dashboard({
     );
   }
 
-  // 로그인한 사람 기준 "내 캐릭터 전체"에서 아직 받을 수 있는 골드 합계
-  const myRemainingTotal = useMemo(() => {
-    const totals = { bound: 0, tradeable: 0 };
+  // 로그인한 사람 기준 "내 캐릭터 전체"의 획득한 골드 / 총 획득 가능한 골드.
+  // 총 획득 가능 골드는 숙제로 고른 레이드 기준으로 고정되고, 체크 여부와 상관없이 변하지 않는다.
+  const myGoldProgress = useMemo(() => {
+    const progress = {
+      earnedBound: 0,
+      earnedTradeable: 0,
+      totalBound: 0,
+      totalTradeable: 0,
+    };
     for (const character of characters) {
-      if (character.owner_id !== currentUserId) continue;
-      const split = remainingSplitFor(character);
-      if (!split) continue;
-      totals.bound += split.bound;
-      totals.tradeable += split.tradeable;
+      if (character.owner_id !== currentUserId || !character.is_gold_earner) continue;
+      for (const raid of selectedRaidsFor(character)) {
+        const split = splitGold(raid);
+        progress.totalBound += split.bound;
+        progress.totalTradeable += split.tradeable;
+        if (isRaidClearedAtAll(character.id, raid)) {
+          progress.earnedBound += split.bound;
+          progress.earnedTradeable += split.tradeable;
+        }
+      }
     }
-    return totals;
+    return progress;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characters, characterRaidMap, checkedSet, currentUserId]);
+
+  function percentOf(earned: number, total: number): number {
+    if (total <= 0) return 0;
+    return Math.round((earned / total) * 100);
+  }
 
   if (characters.length === 0) {
     return (
@@ -213,19 +229,45 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
-        <span className="text-neutral-500">내가 받을 수 있는 골드</span>
-        <span>
-          <span className="text-amber-600 font-medium">
-            거래가능 {myRemainingTotal.tradeable.toLocaleString()}G
-          </span>
-        </span>
-        <span>
-          <span className="text-indigo-600 font-medium">귀속 {myRemainingTotal.bound.toLocaleString()}G</span>
-        </span>
-        <span className="text-neutral-400">
-          합계 {(myRemainingTotal.bound + myRemainingTotal.tradeable).toLocaleString()}G
-        </span>
+      <div className="flex flex-wrap gap-8 rounded-lg border border-neutral-200 bg-white px-4 py-3">
+        {(
+          [
+            {
+              label: "거래가능 골드",
+              earned: myGoldProgress.earnedTradeable,
+              total: myGoldProgress.totalTradeable,
+              textClass: "text-amber-600",
+              barClass: "bg-amber-500",
+              trackClass: "bg-amber-100",
+            },
+            {
+              label: "귀속 골드",
+              earned: myGoldProgress.earnedBound,
+              total: myGoldProgress.totalBound,
+              textClass: "text-indigo-600",
+              barClass: "bg-indigo-500",
+              trackClass: "bg-indigo-100",
+            },
+          ] as const
+        ).map((stat) => {
+          const pct = percentOf(stat.earned, stat.total);
+          return (
+            <div key={stat.label} className="min-w-[170px]">
+              <div className="mb-1 text-xs text-neutral-400">{stat.label}</div>
+              <div className="flex items-baseline gap-1 text-sm">
+                <span className={`font-semibold ${stat.textClass}`}>{stat.earned.toLocaleString()}</span>
+                <span className="text-neutral-400">/ {stat.total.toLocaleString()}</span>
+                <span className={`ml-1 text-xs font-medium ${stat.textClass}`}>{pct}%</span>
+              </div>
+              <div className={`mt-1.5 h-1.5 w-full rounded-full ${stat.trackClass}`}>
+                <div
+                  className={`h-1.5 rounded-full ${stat.barClass}`}
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {profiles

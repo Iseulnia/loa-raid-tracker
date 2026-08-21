@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { setCharacterRaids } from "@/app/actions";
-import { totalGold, difficultyColorClass } from "@/lib/raidDisplay";
+import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 
 type RaidRow = {
   id: string;
@@ -96,6 +96,7 @@ export default function HomeworkEditor({
                   {raidsInGroup.map((raid) => {
                     const active = choicePerGroup.get(groupName) === raid.id;
                     const under = (characterItemLevel ?? 0) < raid.min_item_level;
+                    const { bound, tradeable } = splitGold(raid);
                     return (
                       <button
                         key={raid.id}
@@ -111,9 +112,10 @@ export default function HomeworkEditor({
                         <div className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}>
                           {raid.difficulty}
                         </div>
-                        <div className="text-neutral-400">
-                          {totalGold(raid).toLocaleString()}G
-                          {under && " · 레벨 미달"}
+                        <div className="flex items-center gap-1.5">
+                          {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
+                          {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
+                          {under && <span className="text-neutral-400">· 레벨 미달</span>}
                         </div>
                       </button>
                     );
