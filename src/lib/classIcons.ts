@@ -12,17 +12,13 @@ export const CLASS_ICONS: Record<string, ClassIcon> = {
   홀리나이트: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/a4eaeb31f0d3463ab611d4b7e455ef98.jpg" },
   슬레이어: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/afeeea9a33a04284a01a4f8ccd36a310.jpg" },
   가디언나이트: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/a4e4799e568b4a3bbfed3bfa35745112.jpg" },
-  // TODO: 발키리 — 첨부받은 캐릭터 소개 화면 스크린샷에서 일러스트 부분만 잘라 반영 예정 (아직 파일 미수령)
+  // 발키리는 아트워크 갤러리에 얼굴이 잘 보이는 게 없어서, 사용자가 준 클래스 소개 화면 캡처를 얼굴 중심으로 직접 잘라 로컬에 둠
+  발키리: { url: "/class-icons/valkyrie.png" },
 
   // 무도가
-  인파이터: {
-    url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/39da33e27efa4be688f8922d74bfc314.jpg",
-    objectPosition: "center 25%",
-  },
-  배틀마스터: {
-    url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/5ff291384c304071b88836b9e1f48e66.jpg",
-    objectPosition: "center 25%",
-  },
+  // 인파이터·배틀마스터는 원본 배너에서 얼굴이 한쪽에 치우쳐 있어 얼굴 중심으로 미리 잘라 로컬에 둠
+  인파이터: { url: "/class-icons/infighter.png" },
+  배틀마스터: { url: "/class-icons/battlemaster.png" },
   창술사: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/c6031d008e934402bc3bb6024573b042.jpg" },
   기공사: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/2597981b80074eb49c30bd66e7601c30.jpg" },
   브레이커: { url: "https://cdn-lostark.game.onstove.com/uploadfiles/banner/d7089d42614e4880a4450a3cb2239577.jpg" },
