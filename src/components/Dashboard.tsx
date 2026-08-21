@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
-import { totalGold, splitGold, difficultyColorClass, selectGoldEarningRaids } from "@/lib/raidDisplay";
+import { totalGold, splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -35,7 +35,7 @@ type CheckRow = {
   week_key: string;
   checked_by: string;
 };
-type CharacterRaidRow = { character_id: string; raid_id: string };
+type CharacterRaidRow = { character_id: string; raid_id: string; is_gold_earning: boolean };
 
 function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
@@ -61,12 +61,13 @@ export default function Dashboard({
   const [checkedSet, setCheckedSet] = useState<Set<string>>(
     () => new Set(initialChecks.map((c) => checkKey(c.character_id, c.raid_id, c.gate_number)))
   );
-  const [characterRaidMap, setCharacterRaidMap] = useState<Map<string, Set<string>>>(() => {
-    const map = new Map<string, Set<string>>();
+  // characterId -> (raidId -> 골드 받기로 고른 레이드인지)
+  const [characterRaidMap, setCharacterRaidMap] = useState<Map<string, Map<string, boolean>>>(() => {
+    const map = new Map<string, Map<string, boolean>>();
     for (const cr of initialCharacterRaids) {
-      const set = map.get(cr.character_id) ?? new Set<string>();
-      set.add(cr.raid_id);
-      map.set(cr.character_id, set);
+      const inner = map.get(cr.character_id) ?? new Map<string, boolean>();
+      inner.set(cr.raid_id, cr.is_gold_earning);
+      map.set(cr.character_id, inner);
     }
     return map;
   });
@@ -99,9 +100,9 @@ export default function Dashboard({
         const row = payload.new as CharacterRaidRow;
         setCharacterRaidMap((prev) => {
           const next = new Map(prev);
-          const set = new Set(next.get(row.character_id) ?? []);
-          set.add(row.raid_id);
-          next.set(row.character_id, set);
+          const inner = new Map(next.get(row.character_id) ?? []);
+          inner.set(row.raid_id, row.is_gold_earning);
+          next.set(row.character_id, inner);
           return next;
         });
       })
@@ -110,9 +111,9 @@ export default function Dashboard({
         if (!row.character_id || !row.raid_id) return;
         setCharacterRaidMap((prev) => {
           const next = new Map(prev);
-          const set = new Set(next.get(row.character_id!) ?? []);
-          set.delete(row.raid_id!);
-          next.set(row.character_id!, set);
+          const inner = new Map(next.get(row.character_id!) ?? []);
+          inner.delete(row.raid_id!);
+          next.set(row.character_id!, inner);
           return next;
         });
       })
@@ -172,14 +173,16 @@ export default function Dashboard({
   }
 
   function selectedRaidsFor(character: CharacterRow): RaidRow[] {
-    const ids = characterRaidMap.get(character.id);
-    if (!ids) return [];
-    return raids.filter((r) => ids.has(r.id)).sort((a, b) => a.sort_order - b.sort_order);
+    const selections = characterRaidMap.get(character.id);
+    if (!selections) return [];
+    return raids.filter((r) => selections.has(r.id)).sort((a, b) => a.sort_order - b.sort_order);
   }
 
-  /** 캐릭터 하나당 골드를 받을 수 있는 레이드는 최대 3개 (골드 높은 순). 그 외 선택한 레이드는 골드 계산에서 빠진다. */
+  /** 숙제 편집에서 직접 골드 받기로 고른 레이드만 (최대 3개, 캐릭터별로 유저가 직접 선택). */
   function goldEarningRaidIdsFor(character: CharacterRow): Set<string> {
-    return new Set(selectGoldEarningRaids(selectedRaidsFor(character)).map((r) => r.id));
+    const selections = characterRaidMap.get(character.id);
+    if (!selections) return new Set();
+    return new Set(Array.from(selections.entries()).filter(([, goldEarning]) => goldEarning).map(([raidId]) => raidId));
   }
 
   function remainingSplitFor(character: CharacterRow): { bound: number; tradeable: number } | null {
@@ -390,12 +393,12 @@ export default function Dashboard({
           characterName={editingCharacter.name}
           characterItemLevel={editingCharacter.item_level}
           allRaids={raids}
-          selectedRaidIds={characterRaidMap.get(editingCharacter.id) ?? new Set()}
+          initialSelections={characterRaidMap.get(editingCharacter.id) ?? new Map()}
           onClose={() => setEditingCharacter(null)}
-          onSaved={(newIds) => {
+          onSaved={(newSelections) => {
             setCharacterRaidMap((prev) => {
               const next = new Map(prev);
-              next.set(editingCharacter.id, newIds);
+              next.set(editingCharacter.id, newSelections);
               return next;
             });
           }}

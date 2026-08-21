@@ -105,8 +105,10 @@ export async function setRaidCheck(params: {
   revalidatePath("/");
 }
 
-/** 캐릭터가 주간 숙제로 도는 레이드 목록을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용). */
-export async function setCharacterRaids(characterId: string, raidIds: string[]) {
+export type CharacterRaidSelection = { raidId: string; goldEarning: boolean };
+
+/** 캐릭터가 주간 숙제로 도는 레이드 목록(과 그중 골드를 받을 레이드)을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용). */
+export async function setCharacterRaids(characterId: string, selections: CharacterRaidSelection[]) {
   const { supabase } = await requireUser();
 
   const { error: deleteError } = await supabase
@@ -115,10 +117,14 @@ export async function setCharacterRaids(characterId: string, raidIds: string[]) 
     .eq("character_id", characterId);
   if (deleteError) throw new Error(deleteError.message);
 
-  if (raidIds.length > 0) {
-    const { error: insertError } = await supabase
-      .from("character_raids")
-      .insert(raidIds.map((raidId) => ({ character_id: characterId, raid_id: raidId })));
+  if (selections.length > 0) {
+    const { error: insertError } = await supabase.from("character_raids").insert(
+      selections.map((s) => ({
+        character_id: characterId,
+        raid_id: s.raidId,
+        is_gold_earning: s.goldEarning,
+      }))
+    );
     if (insertError) throw new Error(insertError.message);
   }
 

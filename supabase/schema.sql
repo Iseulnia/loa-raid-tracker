@@ -68,6 +68,7 @@ create table if not exists public.character_raids (
   id uuid primary key default gen_random_uuid(),
   character_id uuid not null references public.characters (id) on delete cascade,
   raid_id uuid not null references public.raids (id) on delete cascade,
+  is_gold_earning boolean not null default true, -- 캐릭터당 최대 3개까지 직접 골라서 켤 수 있음
   created_at timestamptz not null default now(),
   unique (character_id, raid_id)
 );

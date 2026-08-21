@@ -27,7 +27,7 @@ export default async function HomePage() {
         .from("weekly_checks")
         .select("id, character_id, raid_id, gate_number, week_key, checked_by")
         .eq("week_key", weekKey),
-      supabase.from("character_raids").select("character_id, raid_id"),
+      supabase.from("character_raids").select("character_id, raid_id, is_gold_earning"),
     ]);
 
   return (

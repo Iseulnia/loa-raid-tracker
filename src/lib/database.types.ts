@@ -76,12 +76,14 @@ export type Database = {
           id: string;
           character_id: string;
           raid_id: string;
+          is_gold_earning: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           character_id: string;
           raid_id: string;
+          is_gold_earning?: boolean;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["character_raids"]["Insert"]>;

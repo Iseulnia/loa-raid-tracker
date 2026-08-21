@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { setCharacterRaids } from "@/app/actions";
-import { splitGold, difficultyColorClass, selectGoldEarningRaids } from "@/lib/raidDisplay";
+import { setCharacterRaids, type CharacterRaidSelection } from "@/app/actions";
+import { splitGold, difficultyColorClass, MAX_GOLD_EARNING_RAIDS_PER_CHARACTER } from "@/lib/raidDisplay";
 
 type RaidRow = {
   id: string;
@@ -19,7 +19,7 @@ export default function HomeworkEditor({
   characterName,
   characterItemLevel,
   allRaids,
-  selectedRaidIds,
+  initialSelections,
   onClose,
   onSaved,
 }: {
@@ -27,9 +27,9 @@ export default function HomeworkEditor({
   characterName: string;
   characterItemLevel: number | null;
   allRaids: RaidRow[];
-  selectedRaidIds: Set<string>;
+  initialSelections: Map<string, boolean>;
   onClose: () => void;
-  onSaved: (newSelectedIds: Set<string>) => void;
+  onSaved: (newSelections: Map<string, boolean>) => void;
 }) {
   // 레이드 이름(성당/4막/종막...)별로 그룹화 — 같은 레이드는 난이도 하나만 고를 수 있음
   const groups = useMemo(() => {
@@ -47,38 +47,63 @@ export default function HomeworkEditor({
   const [choicePerGroup, setChoicePerGroup] = useState<Map<string, string | null>>(() => {
     const initial = new Map<string, string | null>();
     for (const [groupName, raidsInGroup] of groups) {
-      const chosen = raidsInGroup.find((r) => selectedRaidIds.has(r.id));
+      const chosen = raidsInGroup.find((r) => initialSelections.has(r.id));
       initial.set(groupName, chosen?.id ?? null);
     }
     return initial;
   });
+  const [goldEarningIds, setGoldEarningIds] = useState<Set<string>>(
+    () => new Set(Array.from(initialSelections.entries()).filter(([, gold]) => gold).map(([id]) => id))
+  );
   const [saving, setSaving] = useState(false);
 
-  const raidsById = useMemo(() => new Map(allRaids.map((r) => [r.id, r])), [allRaids]);
+  function pick(groupName: string, raid: RaidRow) {
+    const eligible = (characterItemLevel ?? 0) >= raid.min_item_level;
+    if (!eligible) return;
 
-  // 캐릭터 하나당 골드를 받을 수 있는 레이드는 최대 3개 (골드 높은 순). 지금 고른 것들 중 실시간으로 계산.
-  const goldEarningIds = useMemo(() => {
-    const selected = Array.from(choicePerGroup.values())
-      .filter((id): id is string => id !== null)
-      .map((id) => raidsById.get(id))
-      .filter((r): r is RaidRow => r !== undefined);
-    return new Set(selectGoldEarningRaids(selected).map((r) => r.id));
-  }, [choicePerGroup, raidsById]);
+    const previousChoice = choicePerGroup.get(groupName) ?? null;
+    const deselecting = previousChoice === raid.id;
+    const newChoice = deselecting ? null : raid.id;
 
-  function pick(groupName: string, raidId: string) {
     setChoicePerGroup((prev) => {
       const next = new Map(prev);
-      next.set(groupName, prev.get(groupName) === raidId ? null : raidId);
+      next.set(groupName, newChoice);
+      return next;
+    });
+
+    setGoldEarningIds((prev) => {
+      const next = new Set(prev);
+      if (previousChoice) next.delete(previousChoice);
+      if (newChoice && next.size < MAX_GOLD_EARNING_RAIDS_PER_CHARACTER) {
+        next.add(newChoice);
+      }
+      return next;
+    });
+  }
+
+  function toggleGoldEarning(raidId: string) {
+    setGoldEarningIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(raidId)) {
+        next.delete(raidId);
+      } else {
+        if (next.size >= MAX_GOLD_EARNING_RAIDS_PER_CHARACTER) return prev; // 이미 3개 다 참
+        next.add(raidId);
+      }
       return next;
     });
   }
 
   async function handleSave() {
     setSaving(true);
-    const raidIds = Array.from(choicePerGroup.values()).filter((id): id is string => id !== null);
+    const selectedIds = Array.from(choicePerGroup.values()).filter((id): id is string => id !== null);
+    const selections: CharacterRaidSelection[] = selectedIds.map((raidId) => ({
+      raidId,
+      goldEarning: goldEarningIds.has(raidId),
+    }));
     try {
-      await setCharacterRaids(characterId, raidIds);
-      onSaved(new Set(raidIds));
+      await setCharacterRaids(characterId, selections);
+      onSaved(new Map(selections.map((s) => [s.raidId, s.goldEarning])));
       onClose();
     } finally {
       setSaving(false);
@@ -99,8 +124,8 @@ export default function HomeworkEditor({
           <p className="mb-4 text-xs text-neutral-500">
             레이드마다 난이도를 하나만 고를 수 있어요. 다시 누르면 선택이 풀립니다.
             <br />
-            골드는 캐릭터 하나당 최대 3개까지만 나와요 (골드 높은 순). 4개 이상 고르면 나머지는 골드 없이 진행만
-            체크하는 용도예요.
+            골드는 캐릭터 하나당 최대 {MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}개까지만 받을 수 있어요. 고른 레이드
+            아래 &ldquo;골드 받기&rdquo;를 눌러 직접 골라주세요.
           </p>
           <div className="flex flex-col gap-4">
             {groups.map(([groupName, raidsInGroup]) => (
@@ -110,34 +135,55 @@ export default function HomeworkEditor({
                   {raidsInGroup.map((raid) => {
                     const active = choicePerGroup.get(groupName) === raid.id;
                     const under = (characterItemLevel ?? 0) < raid.min_item_level;
-                    const noGold = active && !goldEarningIds.has(raid.id);
+                    const goldEarning = active && goldEarningIds.has(raid.id);
                     const { bound, tradeable } = splitGold(raid);
                     return (
-                      <button
+                      <div
                         key={raid.id}
-                        type="button"
-                        onClick={() => pick(groupName, raid.id)}
                         className={[
-                          "rounded-lg border px-3 py-1.5 text-left text-xs",
+                          "rounded-lg border px-3 py-1.5 text-xs",
                           active
                             ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                            : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400",
+                            : "border-neutral-200 bg-white text-neutral-600",
+                          under ? "opacity-40" : "",
                         ].join(" ")}
                       >
-                        <div className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}>
-                          {raid.difficulty}
-                        </div>
-                        {noGold ? (
-                          <div className="text-neutral-400">골드 없음</div>
-                        ) : (
+                        <button
+                          type="button"
+                          disabled={under}
+                          onClick={() => pick(groupName, raid)}
+                          title={under ? "아이템레벨 미달" : undefined}
+                          className={["block text-left", under ? "cursor-not-allowed" : "cursor-pointer"].join(" ")}
+                        >
+                          <div
+                            className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}
+                          >
+                            {raid.difficulty}
+                          </div>
                           <div className="flex items-center gap-1">
                             {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
                             {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
                             {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
                           </div>
+                          {under && <div className="text-neutral-400">레벨 미달</div>}
+                        </button>
+
+                        {active && (
+                          <button
+                            type="button"
+                            onClick={() => toggleGoldEarning(raid.id)}
+                            disabled={!goldEarning && goldEarningIds.size >= MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}
+                            className={[
+                              "mt-1.5 w-full rounded border px-1.5 py-0.5 text-[10px]",
+                              goldEarning
+                                ? "border-emerald-400 bg-emerald-100 text-emerald-700"
+                                : "border-neutral-300 bg-white text-neutral-400 disabled:cursor-not-allowed disabled:opacity-50",
+                            ].join(" ")}
+                          >
+                            {goldEarning ? "✓ 골드 받기" : "골드 받기"}
+                          </button>
                         )}
-                        {under && <div className="text-neutral-400">레벨 미달</div>}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -146,22 +192,27 @@ export default function HomeworkEditor({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:text-neutral-800"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {saving ? "저장 중..." : "저장"}
-          </button>
+        <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4">
+          <span className="text-xs text-neutral-400">
+            골드 받기 {goldEarningIds.size}/{MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:text-neutral-800"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {saving ? "저장 중..." : "저장"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
