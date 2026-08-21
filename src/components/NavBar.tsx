@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/actions";
 import ThemeToggle from "@/components/ThemeToggle";
+import NavLinks from "@/components/NavLinks";
 
 export default async function NavBar() {
   const supabase = await createClient();
@@ -20,29 +20,7 @@ export default async function NavBar() {
   return (
     <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-        <nav className="flex items-center gap-4 text-sm font-medium">
-          <Link href="/" className="text-neutral-900 dark:text-neutral-100">
-            대시보드
-          </Link>
-          <Link
-            href="/party"
-            className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
-          >
-            공격대
-          </Link>
-          <Link
-            href="/characters"
-            className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
-          >
-            내 캐릭터
-          </Link>
-          <Link
-            href="/auto-detect"
-            className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
-          >
-            자동 감지
-          </Link>
-        </nav>
+        <NavLinks />
         <div className="flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400">
           <ThemeToggle />
           <span>{profile?.nickname ?? user.email}님</span>
