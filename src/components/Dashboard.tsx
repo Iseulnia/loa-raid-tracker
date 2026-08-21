@@ -16,6 +16,8 @@ type CharacterRow = {
   item_level: number | null;
   combat_power: number | null;
   is_gold_earner: boolean;
+  expedition_label: string | null;
+  is_main_character: boolean;
   sort_order: number;
 };
 type RaidRow = {
@@ -136,6 +138,29 @@ export default function Dashboard({
     }
     return map;
   }, [characters]);
+
+  /** 캐릭터가 여러 개면 원정대(expedition_label)별로 묶어서 구분선을 그리기 위한 그룹핑. */
+  function groupByExpedition(list: CharacterRow[]): { label: string | null; characters: CharacterRow[] }[] {
+    const groups = new Map<string, CharacterRow[]>();
+    for (const c of list) {
+      const key = c.expedition_label ?? "";
+      const group = groups.get(key) ?? [];
+      group.push(c);
+      groups.set(key, group);
+    }
+    const entries = Array.from(groups.entries()).map(([key, chars]) => ({
+      label: key === "" ? null : key,
+      characters: chars,
+    }));
+    entries.sort((a, b) => {
+      if (a.label === null) return 1;
+      if (b.label === null) return -1;
+      const maxA = Math.max(...a.characters.map((c) => c.item_level ?? 0));
+      const maxB = Math.max(...b.characters.map((c) => c.item_level ?? 0));
+      return maxB - maxA;
+    });
+    return entries;
+  }
 
   function isChecked(characterId: string, raidId: string, gate: number) {
     return checkedSet.has(checkKey(characterId, raidId, gate));
@@ -290,17 +315,27 @@ export default function Dashboard({
               {profile.nickname}
               {profile.id === currentUserId && <span className="ml-1 text-neutral-400">(나)</span>}
             </h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {charactersByOwner.get(profile.id)!.map((character) => {
-                const mine = character.owner_id === currentUserId;
-                const selectedRaids = selectedRaidsFor(character);
-                const remaining = remainingSplitFor(character);
-                const goldEarningIds = goldEarningRaidIdsFor(character);
-                return (
-                  <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4">
+            {groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
+              <div key={group.label ?? "__unassigned"} className={groupIndex > 0 ? "mt-4" : ""}>
+                {(group.label || allGroups.length > 1) && (
+                  <div className="mb-1.5 text-xs font-medium text-neutral-400">
+                    {group.label ?? "원정대 미지정"}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {group.characters.map((character) => {
+                    const mine = character.owner_id === currentUserId;
+                    const selectedRaids = selectedRaidsFor(character);
+                    const remaining = remainingSplitFor(character);
+                    const goldEarningIds = goldEarningRaidIdsFor(character);
+                    return (
+                      <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4">
                     <div className="mb-3 flex items-start justify-between">
                       <div>
-                        <div className="font-medium text-neutral-900">{character.name}</div>
+                        <div className="font-medium text-neutral-900">
+                          {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
+                          {character.name}
+                        </div>
                         <div className="text-xs text-neutral-400">
                           {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
                           {character.combat_power != null &&
@@ -380,10 +415,12 @@ export default function Dashboard({
                         </span>
                       </div>
                     )}
-                  </div>
-                );
-              })}
-            </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </section>
         ))}
 

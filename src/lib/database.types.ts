@@ -20,6 +20,8 @@ export type Database = {
           item_level: number | null;
           combat_power: number | null;
           is_gold_earner: boolean;
+          expedition_label: string | null;
+          is_main_character: boolean;
           sort_order: number;
           created_at: string;
         };
@@ -32,6 +34,8 @@ export type Database = {
           item_level?: number | null;
           combat_power?: number | null;
           is_gold_earner?: boolean;
+          expedition_label?: string | null;
+          is_main_character?: boolean;
           sort_order?: number;
           created_at?: string;
         };

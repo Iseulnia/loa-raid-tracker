@@ -28,8 +28,9 @@ export type ImportableCharacter = {
   combatPower: number | null;
 };
 
-/** 로스트아크 API에서 불러온 캐릭터 중 선택한 것들을 내 캐릭터로 등록/갱신한다. */
-export async function importCharacters(characters: ImportableCharacter[]) {
+/** 로스트아크 API에서 불러온 캐릭터 중 선택한 것들을 내 캐릭터로 등록/갱신한다.
+ *  expeditionLabel을 넣으면 이 배치로 불러온 캐릭터들이 같은 원정대(계정)로 묶인다. */
+export async function importCharacters(characters: ImportableCharacter[], expeditionLabel: string | null) {
   const { supabase, user } = await requireUser();
 
   const rows = characters.map((c, i) => ({
@@ -39,6 +40,7 @@ export async function importCharacters(characters: ImportableCharacter[]) {
     class: c.className,
     item_level: c.itemLevel,
     combat_power: c.combatPower,
+    expedition_label: expeditionLabel,
     sort_order: i,
   }));
 
@@ -47,6 +49,32 @@ export async function importCharacters(characters: ImportableCharacter[]) {
     .upsert(rows, { onConflict: "owner_id,name" });
 
   if (error) throw new Error(error.message);
+  revalidatePath("/characters");
+  revalidatePath("/");
+}
+
+/** 같은 원정대(expedition_label) 안에서 이 캐릭터만 대표 캐릭터로 지정하고 나머지는 해제한다. */
+export async function setMainCharacter(characterId: string) {
+  const { supabase, user } = await requireUser();
+
+  const { data: character, error: fetchError } = await supabase
+    .from("characters")
+    .select("expedition_label")
+    .eq("id", characterId)
+    .single();
+  if (fetchError || !character) throw new Error(fetchError?.message ?? "캐릭터를 찾을 수 없어요.");
+
+  let unsetQuery = supabase.from("characters").update({ is_main_character: false }).eq("owner_id", user.id);
+  unsetQuery =
+    character.expedition_label === null
+      ? unsetQuery.is("expedition_label", null)
+      : unsetQuery.eq("expedition_label", character.expedition_label);
+  const { error: unsetError } = await unsetQuery;
+  if (unsetError) throw new Error(unsetError.message);
+
+  const { error } = await supabase.from("characters").update({ is_main_character: true }).eq("id", characterId);
+  if (error) throw new Error(error.message);
+
   revalidatePath("/characters");
   revalidatePath("/");
 }

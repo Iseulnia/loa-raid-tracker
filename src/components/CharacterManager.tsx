@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { importCharacters, toggleGoldEarner, deleteCharacter, type ImportableCharacter } from "@/app/actions";
+import {
+  importCharacters,
+  toggleGoldEarner,
+  deleteCharacter,
+  setMainCharacter,
+  type ImportableCharacter,
+} from "@/app/actions";
 import type { LostArkSibling } from "@/lib/lostark";
 import { parseFormattedNumber } from "@/lib/lostark";
 
@@ -16,6 +22,8 @@ type CharacterRow = {
   item_level: number | null;
   combat_power: number | null;
   is_gold_earner: boolean;
+  expedition_label: string | null;
+  is_main_character: boolean;
   sort_order: number;
 };
 
@@ -25,6 +33,7 @@ function byItemLevelDesc<T extends { ItemAvgLevel: string }>(list: T[]): T[] {
 
 export default function CharacterManager({ initialCharacters }: { initialCharacters: CharacterRow[] }) {
   const [mainName, setMainName] = useState("");
+  const [expeditionLabel, setExpeditionLabel] = useState("");
   const [roster, setRoster] = useState<RosterEntry[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -32,10 +41,28 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
   const [characters, setCharacters] = useState(initialCharacters);
   const [, startTransition] = useTransition();
 
-  const sortedCharacters = useMemo(
-    () => [...characters].sort((a, b) => (b.item_level ?? 0) - (a.item_level ?? 0)),
-    [characters]
-  );
+  const groupedCharacters = useMemo(() => {
+    const groups = new Map<string, CharacterRow[]>();
+    for (const c of characters) {
+      const key = c.expedition_label ?? "";
+      const list = groups.get(key) ?? [];
+      list.push(c);
+      groups.set(key, list);
+    }
+    for (const list of groups.values()) {
+      list.sort((a, b) => {
+        if (a.is_main_character !== b.is_main_character) return a.is_main_character ? -1 : 1;
+        return (b.item_level ?? 0) - (a.item_level ?? 0);
+      });
+    }
+    return Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === "") return 1; // 원정대 미지정은 맨 뒤로
+      if (b[0] === "") return -1;
+      const maxA = Math.max(...a[1].map((c) => c.item_level ?? 0));
+      const maxB = Math.max(...b[1].map((c) => c.item_level ?? 0));
+      return maxB - maxA;
+    });
+  }, [characters]);
 
   async function handleFetchRoster(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +85,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
 
   async function handleImport() {
     if (!roster) return;
+    const label = expeditionLabel.trim() || null;
     const toImport: ImportableCharacter[] = roster
       .filter((r) => selected.has(r.CharacterName))
       .map((r) => ({
@@ -67,7 +95,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
         itemLevel: parseFormattedNumber(r.ItemAvgLevel),
         combatPower: r.CombatPower,
       }));
-    await importCharacters(toImport);
+    await importCharacters(toImport, label);
     // 낙관적으로 화면에 반영 (정확한 최신 목록은 새로고침 시 서버에서 다시 받음)
     setCharacters((prev) => {
       const byName = new Map(prev.map((c) => [c.name, c]));
@@ -82,6 +110,8 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           item_level: c.itemLevel,
           combat_power: c.combatPower,
           is_gold_earner: existing?.is_gold_earner ?? true,
+          expedition_label: label,
+          is_main_character: existing?.is_main_character ?? false,
           sort_order: existing?.sort_order ?? prev.length,
         });
       }
@@ -89,17 +119,39 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
     });
     setRoster(null);
     setMainName("");
+    setExpeditionLabel("");
+  }
+
+  function handleSetMain(character: CharacterRow) {
+    setCharacters((prev) =>
+      prev.map((x) => {
+        if (x.id === character.id) return { ...x, is_main_character: true };
+        if (x.expedition_label === character.expedition_label) return { ...x, is_main_character: false };
+        return x;
+      })
+    );
+    startTransition(() => {
+      setMainCharacter(character.id);
+    });
   }
 
   return (
     <div className="flex flex-col gap-8">
-      <form onSubmit={handleFetchRoster} className="flex gap-2">
+      <form onSubmit={handleFetchRoster} className="flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
           required
           placeholder="대표 캐릭터명 (예: 홍길동)"
           value={mainName}
           onChange={(e) => setMainName(e.target.value)}
+          className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
+        />
+        <input
+          type="text"
+          required
+          placeholder="원정대 이름 (예: 본계정, 부계정, 부부계정)"
+          value={expeditionLabel}
+          onChange={(e) => setExpeditionLabel(e.target.value)}
           className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
         />
         <button
@@ -114,7 +166,9 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
 
       {roster && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
-          <p className="mb-3 text-sm text-neutral-500">등록할 캐릭터를 선택하세요. (아이템레벨 높은 순)</p>
+          <p className="mb-3 text-sm text-neutral-500">
+            등록할 캐릭터를 선택하세요. (아이템레벨 높은 순) · 원정대 이름: <strong>{expeditionLabel || "미입력"}</strong>
+          </p>
           <div className="flex flex-col gap-2">
             {roster.map((r) => (
               <label key={r.CharacterName} className="flex items-center gap-2 text-sm text-neutral-900">
@@ -141,64 +195,89 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           <button
             type="button"
             onClick={handleImport}
-            className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
+            disabled={!expeditionLabel.trim()}
+            className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             선택한 캐릭터 등록
           </button>
         </div>
       )}
 
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-700">등록된 캐릭터 (아이템레벨 높은 순)</h2>
-        {sortedCharacters.length === 0 ? (
+      <div className="flex flex-col gap-6">
+        <h2 className="text-sm font-semibold text-neutral-700">등록된 캐릭터</h2>
+        {characters.length === 0 ? (
           <p className="text-sm text-neutral-400">아직 등록된 캐릭터가 없어요.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {sortedCharacters.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
-              >
-                <div>
-                  <span className="font-medium">{c.name}</span>{" "}
+          groupedCharacters.map(([label, group]) => (
+            <div key={label || "__unassigned"}>
+              <div className="mb-2 flex items-center gap-2 text-xs">
+                <span className="font-semibold text-neutral-600">{label || "원정대 미지정"}</span>
+                {group.find((c) => c.is_main_character) && (
                   <span className="text-neutral-400">
-                    {c.class} · Lv.{c.item_level?.toLocaleString()}
-                    {c.combat_power != null && ` · 전투력 ${c.combat_power.toLocaleString()}`} · {c.server}
+                    대표: {group.find((c) => c.is_main_character)!.name}
                   </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1 text-xs text-neutral-500">
-                    <input
-                      type="checkbox"
-                      checked={c.is_gold_earner}
-                      onChange={(e) => {
-                        const value = e.target.checked;
-                        setCharacters((prev) =>
-                          prev.map((x) => (x.id === c.id ? { ...x, is_gold_earner: value } : x))
-                        );
-                        startTransition(() => {
-                          toggleGoldEarner(c.id, value);
-                        });
-                      }}
-                    />
-                    골드 획득
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCharacters((prev) => prev.filter((x) => x.id !== c.id));
-                      startTransition(() => {
-                        deleteCharacter(c.id);
-                      });
-                    }}
-                    className="text-xs text-red-500 hover:underline"
+                )}
+              </div>
+              <ul className="flex flex-col gap-2">
+                {group.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
                   >
-                    삭제
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                    <div>
+                      <span className="font-medium">
+                        {c.is_main_character && <span className="mr-1 text-amber-500">★</span>}
+                        {c.name}
+                      </span>{" "}
+                      <span className="text-neutral-400">
+                        {c.class} · Lv.{c.item_level?.toLocaleString()}
+                        {c.combat_power != null && ` · 전투력 ${c.combat_power.toLocaleString()}`} · {c.server}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {!c.is_main_character && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetMain(c)}
+                          className="text-xs text-neutral-400 hover:text-amber-500"
+                        >
+                          대표로 설정
+                        </button>
+                      )}
+                      <label className="flex items-center gap-1 text-xs text-neutral-500">
+                        <input
+                          type="checkbox"
+                          checked={c.is_gold_earner}
+                          onChange={(e) => {
+                            const value = e.target.checked;
+                            setCharacters((prev) =>
+                              prev.map((x) => (x.id === c.id ? { ...x, is_gold_earner: value } : x))
+                            );
+                            startTransition(() => {
+                              toggleGoldEarner(c.id, value);
+                            });
+                          }}
+                        />
+                        골드 획득
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCharacters((prev) => prev.filter((x) => x.id !== c.id));
+                          startTransition(() => {
+                            deleteCharacter(c.id);
+                          });
+                        }}
+                        className="text-xs text-red-500 hover:underline"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
         )}
       </div>
     </div>
