@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { setCharacterRaids, type CharacterRaidSelection } from "@/app/actions";
-import { splitGold, difficultyColorClass, MAX_GOLD_EARNING_RAIDS_PER_CHARACTER } from "@/lib/raidDisplay";
+import { splitGold, totalGold, difficultyColorClass, MAX_GOLD_EARNING_RAIDS_PER_CHARACTER } from "@/lib/raidDisplay";
 
 type RaidRow = {
   id: string;
@@ -56,6 +56,43 @@ export default function HomeworkEditor({
     () => new Set(Array.from(initialSelections.entries()).filter(([, gold]) => gold).map(([id]) => id))
   );
   const [saving, setSaving] = useState(false);
+  const [showAutoSelectMenu, setShowAutoSelectMenu] = useState(false);
+
+  /** 그룹(레이드)마다 캐릭터가 갈 수 있는 난이도 중 골드가 제일 높은 걸 고르고,
+   *  그중 상위 3개 그룹만 선택 + 골드 받기로 설정한다. 나머지 그룹은 선택 해제. */
+  function runAutoSelect(metric: "tradeable" | "total") {
+    const goldOf = (raid: RaidRow) => (metric === "tradeable" ? splitGold(raid).tradeable : totalGold(raid));
+
+    const bestPerGroup = new Map<string, RaidRow>();
+    for (const [groupName, raidsInGroup] of groups) {
+      const eligible = raidsInGroup.filter((r) => (characterItemLevel ?? 0) >= r.min_item_level);
+      if (eligible.length === 0) continue;
+      const best = eligible.reduce((a, b) => (goldOf(b) > goldOf(a) ? b : a));
+      bestPerGroup.set(groupName, best);
+    }
+
+    const topGroups = Array.from(bestPerGroup.entries())
+      .sort((a, b) => goldOf(b[1]) - goldOf(a[1]))
+      .slice(0, MAX_GOLD_EARNING_RAIDS_PER_CHARACTER)
+      .map(([groupName]) => groupName);
+    const topGroupSet = new Set(topGroups);
+
+    const nextChoicePerGroup = new Map<string, string | null>();
+    const nextGoldEarning = new Set<string>();
+    for (const [groupName] of groups) {
+      if (topGroupSet.has(groupName)) {
+        const raid = bestPerGroup.get(groupName)!;
+        nextChoicePerGroup.set(groupName, raid.id);
+        nextGoldEarning.add(raid.id);
+      } else {
+        nextChoicePerGroup.set(groupName, null);
+      }
+    }
+
+    setChoicePerGroup(nextChoicePerGroup);
+    setGoldEarningIds(nextGoldEarning);
+    setShowAutoSelectMenu(false);
+  }
 
   function pick(groupName: string, raid: RaidRow) {
     const eligible = (characterItemLevel ?? 0) >= raid.min_item_level;
@@ -121,12 +158,42 @@ export default function HomeworkEditor({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-4 text-xs text-neutral-500">
+          <p className="mb-2 text-xs text-neutral-500">
             레이드마다 난이도를 하나만 고를 수 있어요. 다시 누르면 선택이 풀립니다.
             <br />
             골드는 캐릭터 하나당 최대 {MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}개까지만 받을 수 있어요. 고른 레이드
             아래 &ldquo;골드 받기&rdquo;를 눌러 직접 골라주세요.
           </p>
+
+          <div className="relative mb-4 inline-block">
+            <button
+              type="button"
+              onClick={() => setShowAutoSelectMenu((v) => !v)}
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:border-neutral-400"
+            >
+              골드 최대화 자동 선택 (상위 {MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}개)
+            </button>
+            {showAutoSelectMenu && (
+              <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => runAutoSelect("tradeable")}
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                >
+                  <div className="font-medium text-amber-600">거래가능 골드 기준</div>
+                  <div className="text-neutral-400">거래가능 골드가 제일 많은 조합으로 선택</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runAutoSelect("total")}
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                >
+                  <div className="font-medium text-neutral-900">거래가능 + 귀속 골드 기준</div>
+                  <div className="text-neutral-400">종류 상관없이 총 골드가 제일 많은 조합으로 선택</div>
+                </button>
+              </div>
+            )}
+          </div>
           <div className="flex flex-col gap-4">
             {groups.map(([groupName, raidsInGroup]) => (
               <div key={groupName}>
