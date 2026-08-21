@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
+import { totalGold, splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -38,10 +39,6 @@ type CharacterRaidRow = { character_id: string; raid_id: string };
 
 function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
-}
-
-function totalGold(raid: RaidRow) {
-  return raid.gold_per_gate.reduce((sum, g) => sum + g, 0);
 }
 
 export default function Dashboard({
@@ -180,12 +177,31 @@ export default function Dashboard({
     return raids.filter((r) => ids.has(r.id)).sort((a, b) => a.sort_order - b.sort_order);
   }
 
-  function remainingGoldFor(character: CharacterRow): number | null {
+  function remainingSplitFor(character: CharacterRow): { bound: number; tradeable: number } | null {
     if (!character.is_gold_earner) return null;
-    return selectedRaidsFor(character).reduce((sum, raid) => {
-      return isRaidClearedAtAll(character.id, raid) ? sum : sum + totalGold(raid);
-    }, 0);
+    return selectedRaidsFor(character).reduce(
+      (acc, raid) => {
+        if (isRaidClearedAtAll(character.id, raid)) return acc;
+        const split = splitGold(raid);
+        return { bound: acc.bound + split.bound, tradeable: acc.tradeable + split.tradeable };
+      },
+      { bound: 0, tradeable: 0 }
+    );
   }
+
+  // 로그인한 사람 기준 "내 캐릭터 전체"에서 아직 받을 수 있는 골드 합계
+  const myRemainingTotal = useMemo(() => {
+    const totals = { bound: 0, tradeable: 0 };
+    for (const character of characters) {
+      if (character.owner_id !== currentUserId) continue;
+      const split = remainingSplitFor(character);
+      if (!split) continue;
+      totals.bound += split.bound;
+      totals.tradeable += split.tradeable;
+    }
+    return totals;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characters, characterRaidMap, checkedSet, currentUserId]);
 
   if (characters.length === 0) {
     return (
@@ -197,6 +213,21 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col gap-8">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
+        <span className="text-neutral-500">내가 받을 수 있는 골드</span>
+        <span>
+          <span className="text-amber-600 font-medium">
+            거래가능 {myRemainingTotal.tradeable.toLocaleString()}G
+          </span>
+        </span>
+        <span>
+          <span className="text-indigo-600 font-medium">귀속 {myRemainingTotal.bound.toLocaleString()}G</span>
+        </span>
+        <span className="text-neutral-400">
+          합계 {(myRemainingTotal.bound + myRemainingTotal.tradeable).toLocaleString()}G
+        </span>
+      </div>
+
       {profiles
         .filter((p) => charactersByOwner.has(p.id))
         .map((profile) => (
@@ -209,7 +240,7 @@ export default function Dashboard({
               {charactersByOwner.get(profile.id)!.map((character) => {
                 const mine = character.owner_id === currentUserId;
                 const selectedRaids = selectedRaidsFor(character);
-                const remaining = remainingGoldFor(character);
+                const remaining = remainingSplitFor(character);
                 return (
                   <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4">
                     <div className="mb-3 flex items-start justify-between">
@@ -269,7 +300,7 @@ export default function Dashboard({
                                 >
                                   {cleared ? "✓" : ""}
                                 </span>
-                                {raid.name} {raid.difficulty}
+                                {raid.name} <span className={difficultyColorClass(raid.difficulty)}>{raid.difficulty}</span>
                               </span>
                               <span className="text-neutral-400">{totalGold(raid).toLocaleString()}G</span>
                             </button>
@@ -281,7 +312,10 @@ export default function Dashboard({
                     {remaining !== null && selectedRaids.length > 0 && (
                       <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs">
                         <span className="text-neutral-400">받을 수 있는 골드</span>
-                        <span className="font-medium text-neutral-900">{remaining.toLocaleString()}G</span>
+                        <span className="flex gap-2">
+                          <span className="text-amber-600">{remaining.tradeable.toLocaleString()}G</span>
+                          <span className="text-indigo-600">{remaining.bound.toLocaleString()}G</span>
+                        </span>
                       </div>
                     )}
                   </div>

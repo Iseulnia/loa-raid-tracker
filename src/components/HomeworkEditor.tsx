@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { setCharacterRaids } from "@/app/actions";
+import { totalGold, difficultyColorClass } from "@/lib/raidDisplay";
 
 type RaidRow = {
   id: string;
@@ -107,9 +108,11 @@ export default function HomeworkEditor({
                             : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400",
                         ].join(" ")}
                       >
-                        <div className="font-medium">{raid.difficulty}</div>
+                        <div className={["font-medium", active ? "" : difficultyColorClass(raid.difficulty)].join(" ")}>
+                          {raid.difficulty}
+                        </div>
                         <div className="text-neutral-400">
-                          {raid.gold_per_gate.reduce((s, g) => s + g, 0).toLocaleString()}G
+                          {totalGold(raid).toLocaleString()}G
                           {under && " · 레벨 미달"}
                         </div>
                       </button>
