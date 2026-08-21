@@ -121,6 +121,21 @@ export default function Dashboard({
     return checkedSet.has(checkKey(characterId, raidId, gate));
   }
 
+  function isRaidClearedAtAll(characterId: string, raid: RaidRow) {
+    for (let gate = 1; gate <= raid.gate_count; gate++) {
+      if (isChecked(characterId, raid.id, gate)) return true;
+    }
+    return false;
+  }
+
+  /** 같은 레이드(성당/4막/종막...)는 난이도 하나만 골라서 갈 수 있어서,
+   *  이미 다른 난이도를 체크한 상태면 나머지 난이도는 잠근다. */
+  function isLockedByOtherDifficulty(characterId: string, raid: RaidRow) {
+    return raids.some(
+      (r) => r.id !== raid.id && r.name === raid.name && isRaidClearedAtAll(characterId, r)
+    );
+  }
+
   function toggle(character: CharacterRow, raidId: string, gate: number) {
     if (character.owner_id !== currentUserId) return; // 남의 캐릭터는 읽기 전용
     const key = checkKey(character.id, raidId, gate);
@@ -187,7 +202,9 @@ export default function Dashboard({
                     {columns.map((col) => (
                       <th key={`${col.raid.id}-${col.gate}`} className="whitespace-nowrap px-3 py-2 text-center font-medium">
                         {col.raid.name} {col.raid.difficulty}
-                        <div className="text-[11px] text-neutral-400">{col.gate}관문</div>
+                        {col.raid.gate_count > 1 && (
+                          <div className="text-[11px] text-neutral-400">{col.gate}관문</div>
+                        )}
                       </th>
                     ))}
                     <th className="whitespace-nowrap px-3 py-2 text-right font-medium">예상 골드</th>
@@ -211,20 +228,28 @@ export default function Dashboard({
                           const eligible = (character.item_level ?? 0) >= col.raid.min_item_level;
                           const checked = isChecked(character.id, col.raid.id, col.gate);
                           const mine = character.owner_id === currentUserId;
+                          const lockedByOtherDifficulty =
+                            !checked && isLockedByOtherDifficulty(character.id, col.raid);
+                          const disabled = !mine || !eligible || lockedByOtherDifficulty;
+                          const title = !eligible
+                            ? "아이템레벨 미달"
+                            : lockedByOtherDifficulty
+                              ? "이미 이번 주에 같은 레이드의 다른 난이도를 체크했어요"
+                              : undefined;
                           return (
                             <td key={`${col.raid.id}-${col.gate}`} className="px-3 py-2 text-center">
                               <button
                                 type="button"
-                                disabled={!mine || !eligible}
+                                disabled={disabled}
                                 onClick={() => toggle(character, col.raid.id, col.gate)}
-                                title={!eligible ? "아이템레벨 미달" : undefined}
+                                title={title}
                                 className={[
                                   "h-6 w-6 rounded border text-xs",
                                   checked
                                     ? "border-emerald-500 bg-emerald-500 text-white"
                                     : "border-neutral-300 bg-white",
-                                  !eligible ? "opacity-30" : "",
-                                  mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
+                                  !eligible || lockedByOtherDifficulty ? "opacity-30" : "",
+                                  mine && !disabled ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
                                 ].join(" ")}
                               >
                                 {checked ? "✓" : ""}
