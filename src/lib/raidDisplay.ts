@@ -34,10 +34,10 @@ export function splitGold(raid: RaidLike & { difficulty: string }): { bound: num
 }
 
 const DIFFICULTY_COLOR_CLASS: Record<string, string> = {
-  노말: "text-emerald-600",
-  "1단계": "text-emerald-600",
-  하드: "text-rose-600",
-  "2단계": "text-rose-600",
+  노말: "text-[#93c5fd]",
+  "1단계": "text-[#93c5fd]",
+  하드: "text-[#fb923c]",
+  "2단계": "text-[#fb923c]",
   나이트메어: "text-violet-600",
   "3단계": "text-violet-600",
 };
