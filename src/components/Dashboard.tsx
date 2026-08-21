@@ -399,29 +399,34 @@ export default function Dashboard({
                               className={[
                                 "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs",
                                 cleared
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : "border-neutral-200 bg-white text-neutral-700",
+                                  ? "border-neutral-100 bg-neutral-50 text-neutral-400"
+                                  : "border-neutral-200 bg-white font-medium text-neutral-800",
                                 !eligible ? "opacity-40" : "",
                                 mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
                               ].join(" ")}
                             >
-                              <span className="flex items-center gap-1.5">
+                              <span className={["flex items-center gap-1.5", cleared ? "line-through" : ""].join(" ")}>
                                 <span
                                   className={[
                                     "flex h-4 w-4 items-center justify-center rounded border text-[10px]",
-                                    cleared ? "border-emerald-500 bg-emerald-500 text-white" : "border-neutral-300",
+                                    cleared ? "border-neutral-300 bg-neutral-200 text-neutral-500" : "border-neutral-300",
                                   ].join(" ")}
                                 >
                                   {cleared ? "✓" : ""}
                                 </span>
-                                {raid.name} <span className={difficultyColorClass(raid.difficulty)}>{raid.difficulty}</span>
+                                {raid.name}{" "}
+                                <span className={cleared ? "" : difficultyColorClass(raid.difficulty)}>
+                                  {raid.difficulty}
+                                </span>
                               </span>
                               {noGold ? (
                                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-400">
                                   골드 없음 (4개 이상 선택)
                                 </span>
                               ) : (
-                                <span className="text-neutral-400">{totalGold(raid).toLocaleString()}G</span>
+                                <span className={cleared ? "line-through" : "text-neutral-500"}>
+                                  {totalGold(raid).toLocaleString()}G
+                                </span>
                               )}
                             </button>
                           );
