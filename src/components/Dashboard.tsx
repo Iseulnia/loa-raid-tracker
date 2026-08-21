@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
-import { totalGold, splitGold, difficultyColorClass } from "@/lib/raidDisplay";
+import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -424,9 +424,24 @@ export default function Dashboard({
                                   골드 없음 (4개 이상 선택)
                                 </span>
                               ) : (
-                                <span className={cleared ? "line-through" : "text-neutral-500"}>
-                                  {totalGold(raid).toLocaleString()}G
-                                </span>
+                                (() => {
+                                  const { bound, tradeable } = splitGold(raid);
+                                  return (
+                                    <span className={["flex items-center gap-1", cleared ? "line-through" : ""].join(" ")}>
+                                      {tradeable > 0 && (
+                                        <span className={cleared ? "text-neutral-400" : "text-amber-600"}>
+                                          {tradeable.toLocaleString()}G
+                                        </span>
+                                      )}
+                                      {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
+                                      {bound > 0 && (
+                                        <span className={cleared ? "text-neutral-400" : "text-indigo-600"}>
+                                          {bound.toLocaleString()}G
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })()
                               )}
                             </button>
                           );
