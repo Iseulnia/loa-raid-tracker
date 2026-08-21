@@ -11,7 +11,7 @@ export default async function HomePage() {
 
   const weekKey = getCurrentWeekKey();
 
-  const [{ data: profiles }, { data: characters }, { data: raids }, { data: checks }] =
+  const [{ data: profiles }, { data: characters }, { data: raids }, { data: checks }, { data: characterRaids }] =
     await Promise.all([
       supabase.from("profiles").select("id, nickname"),
       supabase
@@ -27,6 +27,7 @@ export default async function HomePage() {
         .from("weekly_checks")
         .select("id, character_id, raid_id, gate_number, week_key, checked_by")
         .eq("week_key", weekKey),
+      supabase.from("character_raids").select("character_id, raid_id"),
     ]);
 
   return (
@@ -45,6 +46,7 @@ export default async function HomePage() {
         characters={characters ?? []}
         raids={raids ?? []}
         initialChecks={checks ?? []}
+        initialCharacterRaids={characterRaids ?? []}
       />
     </main>
   );

@@ -105,38 +105,22 @@ export async function setRaidCheck(params: {
   revalidatePath("/");
 }
 
-export type RaidInput = {
-  id?: string;
-  name: string;
-  difficulty: string;
-  minItemLevel: number;
-  goldPerGate: number[];
-  isActive: boolean;
-  sortOrder: number;
-};
-
-/** 레이드 목록은 신뢰된 친구 그룹 공용 데이터라 누구나 추가/수정할 수 있다. */
-export async function upsertRaid(input: RaidInput) {
+/** 캐릭터가 주간 숙제로 도는 레이드 목록을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용). */
+export async function setCharacterRaids(characterId: string, raidIds: string[]) {
   const { supabase } = await requireUser();
-  const { error } = await supabase.from("raids").upsert({
-    id: input.id,
-    name: input.name,
-    difficulty: input.difficulty,
-    min_item_level: input.minItemLevel,
-    gate_count: input.goldPerGate.length,
-    gold_per_gate: input.goldPerGate,
-    is_active: input.isActive,
-    sort_order: input.sortOrder,
-  });
-  if (error) throw new Error(error.message);
-  revalidatePath("/raids");
-  revalidatePath("/");
-}
 
-export async function deleteRaid(raidId: string) {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("raids").delete().eq("id", raidId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/raids");
+  const { error: deleteError } = await supabase
+    .from("character_raids")
+    .delete()
+    .eq("character_id", characterId);
+  if (deleteError) throw new Error(deleteError.message);
+
+  if (raidIds.length > 0) {
+    const { error: insertError } = await supabase
+      .from("character_raids")
+      .insert(raidIds.map((raidId) => ({ character_id: characterId, raid_id: raidId })));
+    if (insertError) throw new Error(insertError.message);
+  }
+
   revalidatePath("/");
 }

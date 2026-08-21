@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck } from "@/app/actions";
+import HomeworkEditor from "@/components/HomeworkEditor";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -33,9 +34,14 @@ type CheckRow = {
   week_key: string;
   checked_by: string;
 };
+type CharacterRaidRow = { character_id: string; raid_id: string };
 
 function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
+}
+
+function totalGold(raid: RaidRow) {
+  return raid.gold_per_gate.reduce((sum, g) => sum + g, 0);
 }
 
 export default function Dashboard({
@@ -45,6 +51,7 @@ export default function Dashboard({
   characters,
   raids,
   initialChecks,
+  initialCharacterRaids,
 }: {
   currentUserId: string;
   weekKey: string;
@@ -52,17 +59,28 @@ export default function Dashboard({
   characters: CharacterRow[];
   raids: RaidRow[];
   initialChecks: CheckRow[];
+  initialCharacterRaids: CharacterRaidRow[];
 }) {
   const [checkedSet, setCheckedSet] = useState<Set<string>>(
     () => new Set(initialChecks.map((c) => checkKey(c.character_id, c.raid_id, c.gate_number)))
   );
+  const [characterRaidMap, setCharacterRaidMap] = useState<Map<string, Set<string>>>(() => {
+    const map = new Map<string, Set<string>>();
+    for (const cr of initialCharacterRaids) {
+      const set = map.get(cr.character_id) ?? new Set<string>();
+      set.add(cr.raid_id);
+      map.set(cr.character_id, set);
+    }
+    return map;
+  });
+  const [editingCharacter, setEditingCharacter] = useState<CharacterRow | null>(null);
   const [, startTransition] = useTransition();
 
-  // 다른 친구가 체크하면 실시간으로 반영
+  // 다른 친구가 체크하거나 숙제를 편집하면 실시간으로 반영
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel(`weekly_checks:${weekKey}`)
+      .channel(`dashboard:${weekKey}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "weekly_checks", filter: `week_key=eq.${weekKey}` },
@@ -71,37 +89,42 @@ export default function Dashboard({
           setCheckedSet((prev) => new Set(prev).add(checkKey(row.character_id, row.raid_id, row.gate_number)));
         }
       )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "weekly_checks" },
-        (payload) => {
-          const row = payload.old as Partial<CheckRow>;
-          if (!row.character_id || !row.raid_id || row.gate_number === undefined) return;
-          setCheckedSet((prev) => {
-            const next = new Set(prev);
-            next.delete(checkKey(row.character_id!, row.raid_id!, row.gate_number!));
-            return next;
-          });
-        }
-      )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "weekly_checks" }, (payload) => {
+        const row = payload.old as Partial<CheckRow>;
+        if (!row.character_id || !row.raid_id || row.gate_number === undefined) return;
+        setCheckedSet((prev) => {
+          const next = new Set(prev);
+          next.delete(checkKey(row.character_id!, row.raid_id!, row.gate_number!));
+          return next;
+        });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "character_raids" }, (payload) => {
+        const row = payload.new as CharacterRaidRow;
+        setCharacterRaidMap((prev) => {
+          const next = new Map(prev);
+          const set = new Set(next.get(row.character_id) ?? []);
+          set.add(row.raid_id);
+          next.set(row.character_id, set);
+          return next;
+        });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "character_raids" }, (payload) => {
+        const row = payload.old as Partial<CharacterRaidRow>;
+        if (!row.character_id || !row.raid_id) return;
+        setCharacterRaidMap((prev) => {
+          const next = new Map(prev);
+          const set = new Set(next.get(row.character_id!) ?? []);
+          set.delete(row.raid_id!);
+          next.set(row.character_id!, set);
+          return next;
+        });
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [weekKey]);
-
-  const columns = useMemo(
-    () =>
-      raids.flatMap((raid) =>
-        Array.from({ length: raid.gate_count }, (_, i) => ({
-          raid,
-          gate: i + 1,
-          gold: raid.gold_per_gate[i] ?? 0,
-        }))
-      ),
-    [raids]
-  );
 
   const charactersByOwner = useMemo(() => {
     const map = new Map<string, CharacterRow[]>();
@@ -110,7 +133,6 @@ export default function Dashboard({
       list.push(c);
       map.set(c.owner_id, list);
     }
-    // 아이템레벨 높은 순으로 정렬
     for (const list of map.values()) {
       list.sort((a, b) => (b.item_level ?? 0) - (a.item_level ?? 0));
     }
@@ -128,14 +150,6 @@ export default function Dashboard({
     return false;
   }
 
-  /** 같은 레이드(성당/4막/종막...)는 난이도 하나만 골라서 갈 수 있어서,
-   *  이미 다른 난이도를 체크한 상태면 나머지 난이도는 잠근다. */
-  function isLockedByOtherDifficulty(characterId: string, raid: RaidRow) {
-    return raids.some(
-      (r) => r.id !== raid.id && r.name === raid.name && isRaidClearedAtAll(characterId, r)
-    );
-  }
-
   function toggle(character: CharacterRow, raidId: string, gate: number) {
     if (character.owner_id !== currentUserId) return; // 남의 캐릭터는 읽기 전용
     const key = checkKey(character.id, raidId, gate);
@@ -150,7 +164,6 @@ export default function Dashboard({
 
     startTransition(() => {
       setRaidCheck({ characterId: character.id, raidId, gateNumber: gate, checked: nextChecked }).catch(() => {
-        // 실패하면 되돌림
         setCheckedSet((prev) => {
           const next = new Set(prev);
           if (nextChecked) next.delete(key);
@@ -161,19 +174,17 @@ export default function Dashboard({
     });
   }
 
-  function goldEarnedFor(character: CharacterRow) {
-    if (!character.is_gold_earner) return 0;
-    return columns.reduce((sum, col) => {
-      return isChecked(character.id, col.raid.id, col.gate) ? sum + col.gold : sum;
-    }, 0);
+  function selectedRaidsFor(character: CharacterRow): RaidRow[] {
+    const ids = characterRaidMap.get(character.id);
+    if (!ids) return [];
+    return raids.filter((r) => ids.has(r.id)).sort((a, b) => a.sort_order - b.sort_order);
   }
 
-  if (columns.length === 0) {
-    return (
-      <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
-        등록된 레이드가 없어요. &lsquo;레이드 관리&rsquo;에서 먼저 추가해주세요.
-      </p>
-    );
+  function remainingGoldFor(character: CharacterRow): number | null {
+    if (!character.is_gold_earner) return null;
+    return selectedRaidsFor(character).reduce((sum, raid) => {
+      return isRaidClearedAtAll(character.id, raid) ? sum : sum + totalGold(raid);
+    }, 0);
   }
 
   if (characters.length === 0) {
@@ -194,79 +205,109 @@ export default function Dashboard({
               {profile.nickname}
               {profile.id === currentUserId && <span className="ml-1 text-neutral-400">(나)</span>}
             </h2>
-            <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-              <table className="w-full min-w-max border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 bg-neutral-50 text-left text-xs text-neutral-500">
-                    <th className="sticky left-0 z-10 bg-neutral-50 px-3 py-2 font-medium">캐릭터</th>
-                    {columns.map((col) => (
-                      <th key={`${col.raid.id}-${col.gate}`} className="whitespace-nowrap px-3 py-2 text-center font-medium">
-                        {col.raid.name} {col.raid.difficulty}
-                        {col.raid.gate_count > 1 && (
-                          <div className="text-[11px] text-neutral-400">{col.gate}관문</div>
-                        )}
-                      </th>
-                    ))}
-                    <th className="whitespace-nowrap px-3 py-2 text-right font-medium">예상 골드</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {charactersByOwner
-                    .get(profile.id)!
-                    .map((character) => (
-                      <tr key={character.id} className="border-b border-neutral-100 last:border-0">
-                        <td className="sticky left-0 z-10 bg-white px-3 py-2">
-                          <div className="font-medium">{character.name}</div>
-                          <div className="text-xs text-neutral-400">
-                            {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
-                            {character.combat_power != null &&
-                              ` · 전투력 ${character.combat_power.toLocaleString()}`}
-                            {!character.is_gold_earner && " · 비골드"}
-                          </div>
-                        </td>
-                        {columns.map((col) => {
-                          const eligible = (character.item_level ?? 0) >= col.raid.min_item_level;
-                          const checked = isChecked(character.id, col.raid.id, col.gate);
-                          const mine = character.owner_id === currentUserId;
-                          const lockedByOtherDifficulty =
-                            !checked && isLockedByOtherDifficulty(character.id, col.raid);
-                          const disabled = !mine || !eligible || lockedByOtherDifficulty;
-                          const title = !eligible
-                            ? "아이템레벨 미달"
-                            : lockedByOtherDifficulty
-                              ? "이미 이번 주에 같은 레이드의 다른 난이도를 체크했어요"
-                              : undefined;
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {charactersByOwner.get(profile.id)!.map((character) => {
+                const mine = character.owner_id === currentUserId;
+                const selectedRaids = selectedRaidsFor(character);
+                const remaining = remainingGoldFor(character);
+                return (
+                  <div key={character.id} className="rounded-lg border border-neutral-200 bg-white p-4">
+                    <div className="mb-3 flex items-start justify-between">
+                      <div>
+                        <div className="font-medium text-neutral-900">{character.name}</div>
+                        <div className="text-xs text-neutral-400">
+                          {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
+                          {character.combat_power != null &&
+                            ` · 전투력 ${character.combat_power.toLocaleString()}`}
+                          {!character.is_gold_earner && " · 비골드"}
+                        </div>
+                      </div>
+                      {mine && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingCharacter(character)}
+                          className="whitespace-nowrap rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800"
+                        >
+                          숙제 편집
+                        </button>
+                      )}
+                    </div>
+
+                    {selectedRaids.length === 0 ? (
+                      <p className="text-xs text-neutral-400">
+                        등록된 숙제가 없어요.
+                        {mine && " '숙제 편집'으로 추가해보세요."}
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {selectedRaids.map((raid) => {
+                          const eligible = (character.item_level ?? 0) >= raid.min_item_level;
+                          const cleared = isRaidClearedAtAll(character.id, raid);
+                          const disabled = !mine || !eligible;
                           return (
-                            <td key={`${col.raid.id}-${col.gate}`} className="px-3 py-2 text-center">
-                              <button
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => toggle(character, col.raid.id, col.gate)}
-                                title={title}
-                                className={[
-                                  "h-6 w-6 rounded border text-xs",
-                                  checked
-                                    ? "border-emerald-500 bg-emerald-500 text-white"
-                                    : "border-neutral-300 bg-white",
-                                  !eligible || lockedByOtherDifficulty ? "opacity-30" : "",
-                                  mine && !disabled ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
-                                ].join(" ")}
-                              >
-                                {checked ? "✓" : ""}
-                              </button>
-                            </td>
+                            <button
+                              key={raid.id}
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => toggle(character, raid.id, 1)}
+                              title={!eligible ? "아이템레벨 미달" : undefined}
+                              className={[
+                                "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs",
+                                cleared
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-neutral-200 bg-white text-neutral-700",
+                                !eligible ? "opacity-40" : "",
+                                mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
+                              ].join(" ")}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className={[
+                                    "flex h-4 w-4 items-center justify-center rounded border text-[10px]",
+                                    cleared ? "border-emerald-500 bg-emerald-500 text-white" : "border-neutral-300",
+                                  ].join(" ")}
+                                >
+                                  {cleared ? "✓" : ""}
+                                </span>
+                                {raid.name} {raid.difficulty}
+                              </span>
+                              <span className="text-neutral-400">{totalGold(raid).toLocaleString()}G</span>
+                            </button>
                           );
                         })}
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-neutral-600">
-                          {goldEarnedFor(character).toLocaleString()}G
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+                      </div>
+                    )}
+
+                    {remaining !== null && selectedRaids.length > 0 && (
+                      <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs">
+                        <span className="text-neutral-400">받을 수 있는 골드</span>
+                        <span className="font-medium text-neutral-900">{remaining.toLocaleString()}G</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
         ))}
+
+      {editingCharacter && (
+        <HomeworkEditor
+          characterId={editingCharacter.id}
+          characterName={editingCharacter.name}
+          characterItemLevel={editingCharacter.item_level}
+          allRaids={raids}
+          selectedRaidIds={characterRaidMap.get(editingCharacter.id) ?? new Set()}
+          onClose={() => setEditingCharacter(null)}
+          onSaved={(newIds) => {
+            setCharacterRaidMap((prev) => {
+              const next = new Map(prev);
+              next.set(editingCharacter.id, newIds);
+              return next;
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

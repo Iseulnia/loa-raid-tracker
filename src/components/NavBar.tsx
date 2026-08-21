@@ -26,9 +26,6 @@ export default async function NavBar() {
           <Link href="/characters" className="text-neutral-500 hover:text-neutral-900">
             내 캐릭터
           </Link>
-          <Link href="/raids" className="text-neutral-500 hover:text-neutral-900">
-            레이드 관리
-          </Link>
         </nav>
         <div className="flex items-center gap-3 text-sm text-neutral-500">
           <span>{profile?.nickname ?? user.email}님</span>

@@ -61,6 +61,20 @@ create table if not exists public.raids (
 );
 
 -- ─────────────────────────────────────────────
+-- 3-1. character_raids: 캐릭터가 "이 레이드를 주간 숙제로 한다"고 고른 목록
+--    별도의 레이드 관리 화면 없이, 대시보드의 '숙제 편집' 버튼에서 캐릭터별로 직접 고른다.
+-- ─────────────────────────────────────────────
+create table if not exists public.character_raids (
+  id uuid primary key default gen_random_uuid(),
+  character_id uuid not null references public.characters (id) on delete cascade,
+  raid_id uuid not null references public.raids (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (character_id, raid_id)
+);
+
+create index if not exists character_raids_character_idx on public.character_raids (character_id);
+
+-- ─────────────────────────────────────────────
 -- 4. weekly_checks: 주차별 체크 기록
 --    week_key는 코드에서 계산 (수요일 06:00 KST 기준 그 주의 수요일 날짜, 'YYYY-MM-DD')
 --    → 새 주가 되면 그냥 해당 week_key row가 없으므로 자동으로 "미체크" 상태가 됨 (별도 리셋 배치 불필요)
@@ -79,6 +93,11 @@ create table if not exists public.weekly_checks (
 create index if not exists weekly_checks_week_key_idx on public.weekly_checks (week_key);
 create index if not exists characters_owner_idx on public.characters (owner_id);
 
+-- 실시간 DELETE 이벤트에 삭제된 행의 전체 컬럼이 실려오게 함 (기본값은 PK만 전달되어
+-- 다른 친구 화면에서 체크 해제가 실시간으로 반영되지 않는 문제가 생김)
+alter table public.weekly_checks replica identity full;
+alter table public.character_raids replica identity full;
+
 -- ─────────────────────────────────────────────
 -- 5. RLS: 신뢰된 소규모 친구 그룹 전제 — 로그인한 사람은 전부 조회 가능,
 --    본인 소유 데이터만 쓰기 가능. 레이드 목록은 다 같이 관리하는 공용 데이터라 전원 쓰기 허용.
@@ -86,6 +105,7 @@ create index if not exists characters_owner_idx on public.characters (owner_id);
 alter table public.profiles enable row level security;
 alter table public.characters enable row level security;
 alter table public.raids enable row level security;
+alter table public.character_raids enable row level security;
 alter table public.weekly_checks enable row level security;
 
 create policy "profiles_select_all" on public.profiles
@@ -106,6 +126,23 @@ create policy "raids_select_all" on public.raids
   for select using (auth.role() = 'authenticated');
 create policy "raids_write_all" on public.raids
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+create policy "character_raids_select_all" on public.character_raids
+  for select using (auth.role() = 'authenticated');
+create policy "character_raids_insert_own" on public.character_raids
+  for insert with check (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
+create policy "character_raids_delete_own" on public.character_raids
+  for delete using (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
 
 create policy "checks_select_all" on public.weekly_checks
   for select using (auth.role() = 'authenticated');
@@ -129,9 +166,11 @@ create policy "checks_delete_own_character" on public.weekly_checks
 -- ─────────────────────────────────────────────
 alter publication supabase_realtime add table public.weekly_checks;
 alter publication supabase_realtime add table public.characters;
+alter publication supabase_realtime add table public.character_raids;
 
 -- ─────────────────────────────────────────────
--- 7. 시작용 레이드 시드 데이터 (2026년 8월 5일 패치 기준 클리어 골드표를 토대로 작성 — 패치로 바뀌면 /raids 페이지에서 직접 수정하세요)
+-- 7. 시작용 레이드 시드 데이터 (2026년 8월 5일 패치 기준 클리어 골드표를 토대로 작성 — 패치로 바뀌면 이 파일을 고쳐서
+--    SQL Editor에서 다시 실행하세요. 앱 안에는 레이드 마스터 목록을 편집하는 화면이 따로 없습니다.)
 --    이 표는 관문별 골드가 아니라 "레이드 1회 클리어당 총 골드" 기준이라 gate_count는 전부 1로 둠
 -- ─────────────────────────────────────────────
 insert into public.raids (name, difficulty, min_item_level, gate_count, gold_per_gate, sort_order) values

@@ -71,6 +71,35 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["raids"]["Insert"]>;
         Relationships: [];
       };
+      character_raids: {
+        Row: {
+          id: string;
+          character_id: string;
+          raid_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          character_id: string;
+          raid_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["character_raids"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "character_raids_character_id_fkey";
+            columns: ["character_id"];
+            referencedRelation: "characters";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "character_raids_raid_id_fkey";
+            columns: ["raid_id"];
+            referencedRelation: "raids";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       weekly_checks: {
         Row: {
           id: string;
@@ -117,4 +146,5 @@ export type Database = {
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Character = Database["public"]["Tables"]["characters"]["Row"];
 export type Raid = Database["public"]["Tables"]["raids"]["Row"];
+export type CharacterRaid = Database["public"]["Tables"]["character_raids"]["Row"];
 export type WeeklyCheck = Database["public"]["Tables"]["weekly_checks"]["Row"];
