@@ -75,7 +75,8 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       if (!res.ok) throw new Error(data.error ?? "불러오기 실패");
       const sorted = byItemLevelDesc<RosterEntry>(data.roster);
       setRoster(sorted);
-      setSelected(new Set(sorted.map((r) => r.CharacterName)));
+      // 아이템레벨 높은 순으로 최대 6개까지만 기본 선택 (그 이상은 직접 체크하도록)
+      setSelected(new Set(sorted.slice(0, 6).map((r) => r.CharacterName)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
@@ -167,7 +168,8 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       {roster && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
           <p className="mb-3 text-sm text-neutral-500">
-            등록할 캐릭터를 선택하세요. (아이템레벨 높은 순) · 원정대 이름: <strong>{expeditionLabel || "미입력"}</strong>
+            등록할 캐릭터를 선택하세요. (아이템레벨 높은 순, 상위 6개 기본 선택) · 원정대 이름:{" "}
+            <strong>{expeditionLabel || "미입력"}</strong>
           </p>
           <div className="flex flex-col gap-2">
             {roster.map((r) => (
