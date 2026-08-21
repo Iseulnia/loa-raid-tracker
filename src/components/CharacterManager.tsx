@@ -11,7 +11,7 @@ import {
 import type { LostArkSibling } from "@/lib/lostark";
 import { parseFormattedNumber } from "@/lib/lostark";
 
-type RosterEntry = LostArkSibling & { CombatPower: number | null };
+type RosterEntry = LostArkSibling & { CombatPower: number | null; ClassEngraving: string | null };
 
 type CharacterRow = {
   id: string;
@@ -21,6 +21,7 @@ type CharacterRow = {
   class: string | null;
   item_level: number | null;
   combat_power: number | null;
+  class_engraving: string | null;
   is_gold_earner: boolean;
   expedition_label: string | null;
   is_main_character: boolean;
@@ -95,6 +96,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
         className: r.CharacterClassName,
         itemLevel: parseFormattedNumber(r.ItemAvgLevel),
         combatPower: r.CombatPower,
+        classEngraving: r.ClassEngraving,
       }));
     await importCharacters(toImport, label);
     // 낙관적으로 화면에 반영 (정확한 최신 목록은 새로고침 시 서버에서 다시 받음)
@@ -110,6 +112,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           class: c.className,
           item_level: c.itemLevel,
           combat_power: c.combatPower,
+          class_engraving: c.classEngraving,
           is_gold_earner: existing?.is_gold_earner ?? true,
           expedition_label: label,
           is_main_character: existing?.is_main_character ?? false,

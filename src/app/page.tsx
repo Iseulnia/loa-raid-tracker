@@ -17,7 +17,7 @@ export default async function HomePage() {
       supabase
         .from("characters")
         .select(
-          "id, owner_id, name, server, class, item_level, combat_power, is_gold_earner, expedition_label, is_main_character, sort_order"
+          "id, owner_id, name, server, class, item_level, combat_power, class_engraving, is_gold_earner, expedition_label, is_main_character, sort_order"
         )
         .order("sort_order"),
       supabase

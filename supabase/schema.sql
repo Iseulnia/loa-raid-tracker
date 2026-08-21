@@ -56,6 +56,7 @@ create table if not exists public.characters (
   class text,
   item_level numeric,
   combat_power numeric,
+  class_engraving text, -- 최고 전투력을 기록했을 당시의 직업 각인 (서포터/딜러 구분 표시용)
   is_gold_earner boolean not null default true, -- 골드 획득 캐릭터 6개 제한 표시용
   expedition_label text, -- 원정대(계정) 구분용 이름. 같은 값끼리 같은 계정으로 묶임
   is_main_character boolean not null default false, -- 그 원정대의 대표 캐릭터인지

@@ -93,6 +93,21 @@
   있음 (아직 실사용 피드백 못 받음)
 - 초기화(reset) 버튼은 캐릭터별로 있고, 자동 체크된 항목은 "취소" 가능
 
+**직업 각인 표시 & 서포터/딜러 색상 구분**
+- 로스트아크 오픈 API의 `/armories/characters/{name}/engravings`는 새 ArkPassive 체계에서 범용 각인만 주고
+  (원한/구슬동자 등) 직업 각인은 안 나옴 — 대신 `/armories/characters/{name}/arkpassive`의 최상위 `Title`
+  필드가 정확히 직업 각인 이름("만개", "질풍노도" 등)이라는 걸 실측으로 확인해서 이걸 씀
+  (`fetchClassEngraving`, `src/lib/lostark.ts`)
+- 서포터 판정은 정확히 4개 각인 이름만 하드코딩 매칭: 축복의 오라·절실한 구원·만개·해방자
+  (`src/lib/engravings.ts`의 `isSupportEngraving`), 나머지는 전부 딜러
+- `combat_power`가 "역대 최고 전투력만 저장"하는 방식이라, `class_engraving`도 **그 최고 전투력을 기록한
+  순간의 각인**을 같이 저장하고 같이 갱신함(전투력 전체 갱신/초기화 로직에 동봉) — "지금 각인이 뭔지"가
+  아니라 "그 전투력일 때 각인이 뭐였는지" 기준이라는 게 사용자의 명시적 요구사항
+- 대시보드 카드: 캐릭터 이름 옆에 각인명 표시, 전투력은 서포터면 초록 볼드 `+숫자`, 딜러면 코랄/빨강 볼드
+  `🗡️숫자` (`Dashboard.tsx`, mode="mine"/"party" 공용이라 두 탭 다 자동 적용). 색상 hex는 스크린샷 기준
+  추정치(`#16a34a`/`#4ade80` 초록, `#e2492a`/`#ff8a65` 코랄) — 실제와 다르면 조정 필요
+- `class_engraving`이 아직 없는(마이그레이션 전에 등록된) 캐릭터는 예전처럼 무채색 "전투력 N" 표기로 폴백
+
 **다크모드**
 - 우측 상단 🌙/☀️ 토글, `localStorage`에 저장, OS 설정은 최초 1회만 참고
 - Tailwind v4 `@custom-variant dark (&:where(.dark, .dark *));` 방식 (class 기반, prefers-color-scheme 아님)
@@ -112,6 +127,7 @@
 6. `migration_2026-08-22f_expedition_grouping.sql` — expedition_label, is_main_character 컬럼
 7. `migration_2026-08-22g_raid_sort_order.sql` — 레이드 sort_order를 출시순으로 재정렬
 8. `migration_2026-08-22h_email_allowlist.sql` — allowed_emails 허용목록 + 가입 트리거 수정
+9. `migration_2026-08-22i_class_engraving.sql` — characters.class_engraving 컬럼 추가 (직업 각인 표시용)
 
 새 마이그레이션을 추가할 땐 이 파일 이름 규칙(`migration_YYYY-MM-DD[a-z]_설명.sql`)을 따르고, `schema.sql`도
 같이 최신화해서 새로 설치하는 사람도 한 번에 맞는 스키마를 받도록 유지하세요.

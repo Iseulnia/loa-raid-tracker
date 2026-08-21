@@ -7,6 +7,7 @@ import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/
 import HomeworkEditor from "@/components/HomeworkEditor";
 import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 import { getClassIcon } from "@/lib/classIcons";
+import { isSupportEngraving } from "@/lib/engravings";
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -17,6 +18,7 @@ type CharacterRow = {
   class: string | null;
   item_level: number | null;
   combat_power: number | null;
+  class_engraving: string | null;
   is_gold_earner: boolean;
   expedition_label: string | null;
   is_main_character: boolean;
@@ -442,11 +444,32 @@ export default function Dashboard({
                           <div className="font-medium text-neutral-900 dark:text-neutral-100">
                             {character.is_main_character && <span className="mr-1 text-amber-500">★</span>}
                             {character.name}
+                            {character.class_engraving && (
+                              <span className="ml-1.5 text-xs font-normal text-neutral-400 dark:text-neutral-400">
+                                {character.class_engraving}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-neutral-400 dark:text-neutral-400">
                             {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
-                            {character.combat_power != null &&
-                              ` · 전투력 ${character.combat_power.toLocaleString()}`}
+                            {character.combat_power != null && (
+                              <>
+                                {" · "}
+                                {character.class_engraving ? (
+                                  isSupportEngraving(character.class_engraving) ? (
+                                    <span className="font-bold text-[#16a34a] dark:text-[#4ade80]">
+                                      +{character.combat_power.toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span className="font-bold text-[#e2492a] dark:text-[#ff8a65]">
+                                      🗡️{character.combat_power.toLocaleString()}
+                                    </span>
+                                  )
+                                ) : (
+                                  `전투력 ${character.combat_power.toLocaleString()}`
+                                )}
+                              </>
+                            )}
                             {!character.is_gold_earner && " · 비골드"}
                           </div>
                         </div>

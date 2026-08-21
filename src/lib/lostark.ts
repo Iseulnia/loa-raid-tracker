@@ -81,6 +81,27 @@ export async function fetchCombatPower(characterName: string): Promise<number | 
   }
 }
 
+/** 캐릭터의 직업 각인(ArkPassive Title)을 가져온다. 예: "만개", "질풍노도". */
+export async function fetchClassEngraving(characterName: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/armories/characters/${encodeURIComponent(characterName)}/arkpassive`,
+      {
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+          accept: "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { Title?: string } | null;
+    return data?.Title || null;
+  } catch {
+    return null;
+  }
+}
+
 /** "1,700.00" 같은 콤마 포함 숫자 문자열을 숫자로 변환한다. */
 export function parseFormattedNumber(value: string): number {
   return Number(value.replace(/,/g, "")) || 0;

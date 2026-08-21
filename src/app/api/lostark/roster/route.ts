@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchRoster, fetchCombatPower, LostArkApiError } from "@/lib/lostark";
+import { fetchRoster, fetchCombatPower, fetchClassEngraving, LostArkApiError } from "@/lib/lostark";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -18,12 +18,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const roster = await fetchRoster(name);
-    // 캐릭터별 전투력은 별도 API 호출이 필요해서 병렬로 채워넣는다 (실패해도 나머지는 계속 진행).
+    // 캐릭터별 전투력/직업 각인은 별도 API 호출이 필요해서 병렬로 채워넣는다 (실패해도 나머지는 계속 진행).
     const enriched = await Promise.all(
-      roster.map(async (r) => ({
-        ...r,
-        CombatPower: await fetchCombatPower(r.CharacterName),
-      }))
+      roster.map(async (r) => {
+        const [CombatPower, ClassEngraving] = await Promise.all([
+          fetchCombatPower(r.CharacterName),
+          fetchClassEngraving(r.CharacterName),
+        ]);
+        return { ...r, CombatPower, ClassEngraving };
+      })
     );
     return NextResponse.json({ roster: enriched });
   } catch (err) {

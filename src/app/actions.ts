@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentWeekKey } from "@/lib/week";
-import { fetchCombatPower } from "@/lib/lostark";
+import { fetchCombatPower, fetchClassEngraving } from "@/lib/lostark";
 
 async function requireUser() {
   const supabase = await createClient();
@@ -27,6 +27,7 @@ export type ImportableCharacter = {
   className: string;
   itemLevel: number;
   combatPower: number | null;
+  classEngraving: string | null;
 };
 
 /** 로스트아크 API에서 불러온 캐릭터 중 선택한 것들을 내 캐릭터로 등록/갱신한다.
@@ -41,6 +42,7 @@ export async function importCharacters(characters: ImportableCharacter[], expedi
     class: c.className,
     item_level: c.itemLevel,
     combat_power: c.combatPower,
+    class_engraving: c.classEngraving,
     expedition_label: expeditionLabel,
     sort_order: i,
   }));
@@ -80,31 +82,42 @@ export async function setMainCharacter(characterId: string) {
   revalidatePath("/");
 }
 
-export type CombatPowerBulkResult = { characterId: string; combatPower: number | null }[];
+export type CombatPowerBulkResult = { characterId: string; combatPower: number | null; classEngraving: string | null }[];
 
 /**
  * 로스트아크는 카오스던전 세팅과 레이드 세팅이 따로 있어서, API가 갱신되는 순간 카던 세팅 중이면
  * 전투력이 실제 레이드 전투력보다 낮게 잡힐 수 있다. 그래서 새로 받은 값이 기존 저장값보다 높을 때만 갱신한다
- * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음). 내 캐릭터 전체를 한 번에 처리한다.
+ * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음). 직업 각인도 그 순간의 값을 함께 저장해서,
+ * "최고 전투력을 기록했을 때의 각인" 기준으로 서포터/딜러가 표시되도록 한다. 내 캐릭터 전체를 한 번에 처리한다.
  */
 export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
   const { data: myCharacters, error: fetchError } = await supabase
     .from("characters")
-    .select("id, name, combat_power")
+    .select("id, name, combat_power, class_engraving")
     .eq("owner_id", user.id);
   if (fetchError) throw new Error(fetchError.message);
 
   const results = await Promise.all(
     (myCharacters ?? []).map(async (character) => {
-      const fresh = await fetchCombatPower(character.name);
+      const [fresh, freshEngraving] = await Promise.all([
+        fetchCombatPower(character.name),
+        fetchClassEngraving(character.name),
+      ]);
       const shouldUpdate = fresh !== null && (character.combat_power === null || fresh > character.combat_power);
       if (shouldUpdate) {
-        const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", character.id);
+        const { error } = await supabase
+          .from("characters")
+          .update({ combat_power: fresh, class_engraving: freshEngraving })
+          .eq("id", character.id);
         if (error) throw new Error(error.message);
       }
-      return { characterId: character.id, combatPower: shouldUpdate ? fresh : character.combat_power };
+      return {
+        characterId: character.id,
+        combatPower: shouldUpdate ? fresh : character.combat_power,
+        classEngraving: shouldUpdate ? freshEngraving : character.class_engraving,
+      };
     })
   );
 
@@ -114,7 +127,7 @@ export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
 }
 
 /** 실제로 장비를 빼거나 스펙이 다운된 경우, 예전에 기록된 "최고 전투력"이 더 이상 맞지 않을 수 있어서
- *  최댓값 비교 없이 내 캐릭터 전체를 현재 API 값으로 강제로 덮어쓴다. */
+ *  최댓값 비교 없이 내 캐릭터 전체를 현재 API 값(전투력+직업 각인)으로 강제로 덮어쓴다. */
 export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
@@ -126,10 +139,16 @@ export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
 
   const results = await Promise.all(
     (myCharacters ?? []).map(async (character) => {
-      const fresh = await fetchCombatPower(character.name);
-      const { error } = await supabase.from("characters").update({ combat_power: fresh }).eq("id", character.id);
+      const [fresh, freshEngraving] = await Promise.all([
+        fetchCombatPower(character.name),
+        fetchClassEngraving(character.name),
+      ]);
+      const { error } = await supabase
+        .from("characters")
+        .update({ combat_power: fresh, class_engraving: freshEngraving })
+        .eq("id", character.id);
       if (error) throw new Error(error.message);
-      return { characterId: character.id, combatPower: fresh };
+      return { characterId: character.id, combatPower: fresh, classEngraving: freshEngraving };
     })
   );
 
