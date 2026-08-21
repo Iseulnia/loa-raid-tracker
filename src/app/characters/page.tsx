@@ -10,7 +10,7 @@ export default async function CharactersPage() {
 
   const { data: characters } = await supabase
     .from("characters")
-    .select("id, owner_id, name, server, class, item_level, is_gold_earner, sort_order")
+    .select("id, owner_id, name, server, class, item_level, combat_power, is_gold_earner, sort_order")
     .eq("owner_id", user.id)
     .order("sort_order");
 

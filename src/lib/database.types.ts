@@ -18,6 +18,7 @@ export type Database = {
           server: string | null;
           class: string | null;
           item_level: number | null;
+          combat_power: number | null;
           is_gold_earner: boolean;
           sort_order: number;
           created_at: string;
@@ -29,6 +30,7 @@ export type Database = {
           server?: string | null;
           class?: string | null;
           item_level?: number | null;
+          combat_power?: number | null;
           is_gold_earner?: boolean;
           sort_order?: number;
           created_at?: string;

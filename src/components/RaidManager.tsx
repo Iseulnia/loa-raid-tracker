@@ -74,28 +74,28 @@ export default function RaidManager({ initialRaids }: { initialRaids: RaidRow[] 
             placeholder="레이드 이름 (예: 아브렐슈드)"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
           />
           <input
             type="text"
             placeholder="난이도 (예: 하드)"
             value={form.difficulty}
             onChange={(e) => setForm({ ...form, difficulty: e.target.value })}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
           />
           <input
             type="number"
             placeholder="입장 최소 아이템레벨"
             value={form.minItemLevel}
             onChange={(e) => setForm({ ...form, minItemLevel: e.target.value })}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
           />
           <input
             type="text"
             placeholder="관문별 골드 (예: 4000,4500,5200)"
             value={form.goldPerGate}
             onChange={(e) => setForm({ ...form, goldPerGate: e.target.value })}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
           />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -108,7 +108,7 @@ export default function RaidManager({ initialRaids }: { initialRaids: RaidRow[] 
         {raids.map((r) => (
           <li
             key={r.id}
-            className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm"
+            className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
           >
             <div>
               <span className="font-medium">

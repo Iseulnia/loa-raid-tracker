@@ -2,7 +2,7 @@
 // 문서: https://developer-lostark.game.onstove.com/
 //
 // 주의: 이 API는 "캐릭터가 이번 주 레이드를 클리어했는지" 는 제공하지 않는다.
-// 여기서는 원정대(같은 계정) 캐릭터 목록과 아이템 레벨만 자동으로 가져오는 데 사용한다.
+// 여기서는 원정대(같은 계정) 캐릭터 목록, 아이템 레벨, 전투력을 자동으로 가져오는 데 사용한다.
 
 const BASE_URL = "https://developer-lostark.game.onstove.com";
 
@@ -35,7 +35,7 @@ function getApiKey(): string {
 /** 대표 캐릭터명 하나로 같은 원정대(계정)의 전체 캐릭터 목록을 가져온다. */
 export async function fetchRoster(characterName: string): Promise<LostArkSibling[]> {
   const res = await fetch(
-    `${BASE_URL}/armories/characters/${encodeURIComponent(characterName)}/siblings`,
+    `${BASE_URL}/characters/${encodeURIComponent(characterName)}/siblings`,
     {
       headers: {
         Authorization: `Bearer ${getApiKey()}`,
@@ -59,7 +59,29 @@ export async function fetchRoster(characterName: string): Promise<LostArkSibling
   return data ?? [];
 }
 
-/** "1,700.00" 같은 문자열을 숫자로 변환한다. */
-export function parseItemLevel(value: string): number {
+/** 캐릭터 하나의 전투력을 가져온다. 프로필 조회가 실패해도 전체 목록 조회를 막지 않도록 null로 처리한다. */
+export async function fetchCombatPower(characterName: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/armories/characters/${encodeURIComponent(characterName)}/profiles`,
+      {
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+          accept: "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { CombatPower?: string } | null;
+    if (!data?.CombatPower) return null;
+    return parseFormattedNumber(data.CombatPower);
+  } catch {
+    return null;
+  }
+}
+
+/** "1,700.00" 같은 콤마 포함 숫자 문자열을 숫자로 변환한다. */
+export function parseFormattedNumber(value: string): number {
   return Number(value.replace(/,/g, "")) || 0;
 }

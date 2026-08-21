@@ -16,7 +16,7 @@ export default async function HomePage() {
       supabase.from("profiles").select("id, nickname"),
       supabase
         .from("characters")
-        .select("id, owner_id, name, server, class, item_level, is_gold_earner, sort_order")
+        .select("id, owner_id, name, server, class, item_level, combat_power, is_gold_earner, sort_order")
         .order("sort_order"),
       supabase
         .from("raids")

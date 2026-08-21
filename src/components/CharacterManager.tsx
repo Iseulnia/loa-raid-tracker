@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { importCharacters, toggleGoldEarner, deleteCharacter, type ImportableCharacter } from "@/app/actions";
 import type { LostArkSibling } from "@/lib/lostark";
-import { parseItemLevel } from "@/lib/lostark";
+import { parseFormattedNumber } from "@/lib/lostark";
+
+type RosterEntry = LostArkSibling & { CombatPower: number | null };
 
 type CharacterRow = {
   id: string;
@@ -12,18 +14,28 @@ type CharacterRow = {
   server: string | null;
   class: string | null;
   item_level: number | null;
+  combat_power: number | null;
   is_gold_earner: boolean;
   sort_order: number;
 };
 
+function byItemLevelDesc<T extends { ItemAvgLevel: string }>(list: T[]): T[] {
+  return [...list].sort((a, b) => parseFormattedNumber(b.ItemAvgLevel) - parseFormattedNumber(a.ItemAvgLevel));
+}
+
 export default function CharacterManager({ initialCharacters }: { initialCharacters: CharacterRow[] }) {
   const [mainName, setMainName] = useState("");
-  const [roster, setRoster] = useState<LostArkSibling[] | null>(null);
+  const [roster, setRoster] = useState<RosterEntry[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [characters, setCharacters] = useState(initialCharacters);
   const [, startTransition] = useTransition();
+
+  const sortedCharacters = useMemo(
+    () => [...characters].sort((a, b) => (b.item_level ?? 0) - (a.item_level ?? 0)),
+    [characters]
+  );
 
   async function handleFetchRoster(e: React.FormEvent) {
     e.preventDefault();
@@ -34,8 +46,9 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       const res = await fetch(`/api/lostark/roster?name=${encodeURIComponent(mainName)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "불러오기 실패");
-      setRoster(data.roster);
-      setSelected(new Set(data.roster.map((r: LostArkSibling) => r.CharacterName)));
+      const sorted = byItemLevelDesc<RosterEntry>(data.roster);
+      setRoster(sorted);
+      setSelected(new Set(sorted.map((r) => r.CharacterName)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류");
     } finally {
@@ -51,7 +64,8 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
         name: r.CharacterName,
         server: r.ServerName,
         className: r.CharacterClassName,
-        itemLevel: parseItemLevel(r.ItemAvgLevel),
+        itemLevel: parseFormattedNumber(r.ItemAvgLevel),
+        combatPower: r.CombatPower,
       }));
     await importCharacters(toImport);
     // 낙관적으로 화면에 반영 (정확한 최신 목록은 새로고침 시 서버에서 다시 받음)
@@ -66,6 +80,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           server: c.server,
           class: c.className,
           item_level: c.itemLevel,
+          combat_power: c.combatPower,
           is_gold_earner: existing?.is_gold_earner ?? true,
           sort_order: existing?.sort_order ?? prev.length,
         });
@@ -85,7 +100,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           placeholder="대표 캐릭터명 (예: 홍길동)"
           value={mainName}
           onChange={(e) => setMainName(e.target.value)}
-          className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+          className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
         />
         <button
           type="submit"
@@ -99,10 +114,10 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
 
       {roster && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
-          <p className="mb-3 text-sm text-neutral-500">등록할 캐릭터를 선택하세요.</p>
+          <p className="mb-3 text-sm text-neutral-500">등록할 캐릭터를 선택하세요. (아이템레벨 높은 순)</p>
           <div className="flex flex-col gap-2">
             {roster.map((r) => (
-              <label key={r.CharacterName} className="flex items-center gap-2 text-sm">
+              <label key={r.CharacterName} className="flex items-center gap-2 text-sm text-neutral-900">
                 <input
                   type="checkbox"
                   checked={selected.has(r.CharacterName)}
@@ -117,7 +132,8 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                 />
                 <span className="font-medium">{r.CharacterName}</span>
                 <span className="text-neutral-400">
-                  {r.CharacterClassName} · {r.ItemAvgLevel} · {r.ServerName}
+                  {r.CharacterClassName} · Lv.{r.ItemAvgLevel}
+                  {r.CombatPower != null && ` · 전투력 ${r.CombatPower.toLocaleString()}`} · {r.ServerName}
                 </span>
               </label>
             ))}
@@ -133,20 +149,21 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       )}
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-700">등록된 캐릭터</h2>
-        {characters.length === 0 ? (
+        <h2 className="mb-2 text-sm font-semibold text-neutral-700">등록된 캐릭터 (아이템레벨 높은 순)</h2>
+        {sortedCharacters.length === 0 ? (
           <p className="text-sm text-neutral-400">아직 등록된 캐릭터가 없어요.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {characters.map((c) => (
+            {sortedCharacters.map((c) => (
               <li
                 key={c.id}
-                className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm"
+                className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
               >
                 <div>
                   <span className="font-medium">{c.name}</span>{" "}
                   <span className="text-neutral-400">
-                    {c.class} · {c.item_level?.toLocaleString()} · {c.server}
+                    {c.class} · Lv.{c.item_level?.toLocaleString()}
+                    {c.combat_power != null && ` · 전투력 ${c.combat_power.toLocaleString()}`} · {c.server}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">

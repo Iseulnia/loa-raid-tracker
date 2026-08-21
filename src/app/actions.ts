@@ -25,6 +25,7 @@ export type ImportableCharacter = {
   server: string;
   className: string;
   itemLevel: number;
+  combatPower: number | null;
 };
 
 /** 로스트아크 API에서 불러온 캐릭터 중 선택한 것들을 내 캐릭터로 등록/갱신한다. */
@@ -37,6 +38,7 @@ export async function importCharacters(characters: ImportableCharacter[]) {
     server: c.server,
     class: c.className,
     item_level: c.itemLevel,
+    combat_power: c.combatPower,
     sort_order: i,
   }));
 

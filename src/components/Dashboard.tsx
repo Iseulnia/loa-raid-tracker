@@ -12,6 +12,7 @@ type CharacterRow = {
   server: string | null;
   class: string | null;
   item_level: number | null;
+  combat_power: number | null;
   is_gold_earner: boolean;
   sort_order: number;
 };
@@ -109,6 +110,10 @@ export default function Dashboard({
       list.push(c);
       map.set(c.owner_id, list);
     }
+    // 아이템레벨 높은 순으로 정렬
+    for (const list of map.values()) {
+      list.sort((a, b) => (b.item_level ?? 0) - (a.item_level ?? 0));
+    }
     return map;
   }, [characters]);
 
@@ -196,7 +201,9 @@ export default function Dashboard({
                         <td className="sticky left-0 z-10 bg-white px-3 py-2">
                           <div className="font-medium">{character.name}</div>
                           <div className="text-xs text-neutral-400">
-                            {character.class} · {character.item_level?.toLocaleString() ?? "-"}
+                            {character.class} · Lv.{character.item_level?.toLocaleString() ?? "-"}
+                            {character.combat_power != null &&
+                              ` · 전투력 ${character.combat_power.toLocaleString()}`}
                             {!character.is_gold_earner && " · 비골드"}
                           </div>
                         </td>
