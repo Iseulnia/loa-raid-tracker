@@ -285,7 +285,7 @@ export default function Dashboard({
         {(
           [
             {
-              label: "체크한 레이드",
+              label: "남은 레이드",
               earned: myRaidProgress.checked,
               total: myRaidProgress.total,
               textClass: "text-emerald-600",
