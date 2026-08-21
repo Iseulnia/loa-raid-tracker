@@ -35,8 +35,8 @@ export default async function HomePage() {
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-xl font-bold">이번 주 숙제 현황</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">이번 주 숙제 현황</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
           이번 주({weekKey} 06:00부터) · 다음 초기화까지 {getTimeUntilReset()}
         </p>
       </div>

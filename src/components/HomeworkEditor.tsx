@@ -149,16 +149,16 @@ export default function HomeworkEditor({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg bg-white">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
-          <h3 className="font-semibold text-neutral-900">{characterName} 숙제 편집</h3>
-          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-700">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-lg bg-white dark:bg-neutral-900">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{characterName} 숙제 편집</h3>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200">
             닫기
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-2 text-xs text-neutral-500">
+          <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
             레이드마다 난이도를 하나만 고를 수 있어요. 다시 누르면 선택이 풀립니다.
             <br />
             골드는 캐릭터 하나당 최대 {MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}개까지만 받을 수 있어요. 고른 레이드
@@ -169,27 +169,27 @@ export default function HomeworkEditor({
             <button
               type="button"
               onClick={() => setShowAutoSelectMenu((v) => !v)}
-              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:border-neutral-400"
+              className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:border-neutral-400 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-600"
             >
               골드 최대화 자동 선택 (상위 {MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}개)
             </button>
             {showAutoSelectMenu && (
-              <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg">
+              <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
                 <button
                   type="button"
                   onClick={() => runAutoSelect("tradeable")}
-                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
-                  <div className="font-medium text-amber-600">거래가능 골드 기준</div>
-                  <div className="text-neutral-400">거래가능 골드가 제일 많은 조합으로 선택</div>
+                  <div className="font-medium text-amber-600 dark:text-amber-400">거래가능 골드 기준</div>
+                  <div className="text-neutral-400 dark:text-neutral-500">거래가능 골드가 제일 많은 조합으로 선택</div>
                 </button>
                 <button
                   type="button"
                   onClick={() => runAutoSelect("total")}
-                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
-                  <div className="font-medium text-neutral-900">거래가능 + 귀속 골드 기준</div>
-                  <div className="text-neutral-400">종류 상관없이 총 골드가 제일 많은 조합으로 선택</div>
+                  <div className="font-medium text-neutral-900 dark:text-neutral-100">거래가능 + 귀속 골드 기준</div>
+                  <div className="text-neutral-400 dark:text-neutral-500">종류 상관없이 총 골드가 제일 많은 조합으로 선택</div>
                 </button>
               </div>
             )}
@@ -197,7 +197,7 @@ export default function HomeworkEditor({
           <div className="flex flex-col gap-4">
             {groups.map(([groupName, raidsInGroup]) => (
               <div key={groupName}>
-                <div className="mb-1.5 text-sm font-medium text-neutral-900">{groupName}</div>
+                <div className="mb-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">{groupName}</div>
                 <div className="flex flex-wrap gap-2">
                   {raidsInGroup.map((raid) => {
                     const active = choicePerGroup.get(groupName) === raid.id;
@@ -210,8 +210,8 @@ export default function HomeworkEditor({
                         className={[
                           "rounded-lg border px-3 py-1.5 text-xs",
                           active
-                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                            : "border-neutral-200 bg-white text-neutral-600",
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-500 dark:bg-emerald-950 dark:text-emerald-400"
+                            : "border-neutral-200 bg-white text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400",
                           under ? "opacity-40" : "",
                         ].join(" ")}
                       >
@@ -228,11 +228,11 @@ export default function HomeworkEditor({
                             {raid.difficulty}
                           </div>
                           <div className="flex items-center gap-1">
-                            {tradeable > 0 && <span className="text-amber-600">{tradeable.toLocaleString()}G</span>}
-                            {tradeable > 0 && bound > 0 && <span className="text-neutral-300">/</span>}
-                            {bound > 0 && <span className="text-indigo-600">{bound.toLocaleString()}G</span>}
+                            {tradeable > 0 && <span className="text-amber-600 dark:text-amber-400">{tradeable.toLocaleString()}G</span>}
+                            {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-600">/</span>}
+                            {bound > 0 && <span className="text-indigo-600 dark:text-indigo-400">{bound.toLocaleString()}G</span>}
                           </div>
-                          {under && <div className="text-neutral-400">레벨 미달</div>}
+                          {under && <div className="text-neutral-400 dark:text-neutral-500">레벨 미달</div>}
                         </button>
 
                         {active && (
@@ -243,8 +243,8 @@ export default function HomeworkEditor({
                             className={[
                               "mt-1.5 w-full rounded border px-1.5 py-0.5 text-[10px]",
                               goldEarning
-                                ? "border-emerald-400 bg-emerald-100 text-emerald-700"
-                                : "border-neutral-300 bg-white text-neutral-400 disabled:cursor-not-allowed disabled:opacity-50",
+                                ? "border-emerald-400 bg-emerald-100 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-900 dark:text-emerald-300"
+                                : "border-neutral-300 bg-white text-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-500",
                             ].join(" ")}
                           >
                             {goldEarning ? "✓ 골드 받기" : "골드 받기"}
@@ -259,15 +259,15 @@ export default function HomeworkEditor({
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4">
-          <span className="text-xs text-neutral-400">
+        <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4 dark:border-neutral-800">
+          <span className="text-xs text-neutral-400 dark:text-neutral-500">
             골드 받기 {goldEarningIds.size}/{MAX_GOLD_EARNING_RAIDS_PER_CHARACTER}
           </span>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:text-neutral-800"
+              className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"
             >
               취소
             </button>
@@ -275,7 +275,7 @@ export default function HomeworkEditor({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
             >
               {saving ? "저장 중..." : "저장"}
             </button>

@@ -35,11 +35,11 @@ export default function LoginPage() {
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-6">
       <div className="text-center">
         <h1 className="text-2xl font-bold">로아 숙제 체크</h1>
-        <p className="mt-1 text-sm text-neutral-500">친구들끼리 쓰는 주간 레이드 체크리스트</p>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">친구들끼리 쓰는 주간 레이드 체크리스트</p>
       </div>
 
       {status === "sent" ? (
-        <p className="rounded-lg bg-emerald-50 p-4 text-center text-sm text-emerald-700">
+        <p className="rounded-lg bg-emerald-50 p-4 text-center text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
           {email} 로 로그인 링크를 보냈어요. 메일함을 확인해주세요.
         </p>
       ) : (
@@ -50,19 +50,19 @@ export default function LoginPage() {
             placeholder="이메일"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-lg border border-neutral-300 px-4 py-2 outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-neutral-900 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:border-neutral-500"
           />
           <input
             type="text"
             placeholder="닉네임 (처음 로그인할 때만)"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            className="rounded-lg border border-neutral-300 px-4 py-2 outline-none focus:border-neutral-500"
+            className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-neutral-900 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:border-neutral-500"
           />
           <button
             type="submit"
             disabled={status === "sending"}
-            className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
           >
             {status === "sending" ? "전송 중..." : "로그인 링크 받기"}
           </button>

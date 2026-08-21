@@ -145,7 +145,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           placeholder="대표 캐릭터명 (예: 홍길동)"
           value={mainName}
           onChange={(e) => setMainName(e.target.value)}
-          className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
+          className="flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
         />
         <input
           type="text"
@@ -153,27 +153,27 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
           placeholder="원정대 이름 (예: 본계정, 부계정, 부부계정)"
           value={expeditionLabel}
           onChange={(e) => setExpeditionLabel(e.target.value)}
-          className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500"
+          className="flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
         />
         <button
           type="submit"
           disabled={loading}
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
         >
           {loading ? "불러오는 중..." : "원정대 불러오기"}
         </button>
       </form>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {roster && (
-        <div className="rounded-lg border border-neutral-200 bg-white p-4">
-          <p className="mb-3 text-sm text-neutral-500">
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
             등록할 캐릭터를 선택하세요. (아이템레벨 높은 순, 상위 6개 기본 선택) · 원정대 이름:{" "}
             <strong>{expeditionLabel || "미입력"}</strong>
           </p>
           <div className="flex flex-col gap-2">
             {roster.map((r) => (
-              <label key={r.CharacterName} className="flex items-center gap-2 text-sm text-neutral-900">
+              <label key={r.CharacterName} className="flex items-center gap-2 text-sm text-neutral-900 dark:text-neutral-100">
                 <input
                   type="checkbox"
                   checked={selected.has(r.CharacterName)}
@@ -187,7 +187,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                   }
                 />
                 <span className="font-medium">{r.CharacterName}</span>
-                <span className="text-neutral-400">
+                <span className="text-neutral-400 dark:text-neutral-500">
                   {r.CharacterClassName} · Lv.{r.ItemAvgLevel}
                   {r.CombatPower != null && ` · 전투력 ${r.CombatPower.toLocaleString()}`} · {r.ServerName}
                 </span>
@@ -206,16 +206,16 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
       )}
 
       <div className="flex flex-col gap-6">
-        <h2 className="text-sm font-semibold text-neutral-700">등록된 캐릭터</h2>
+        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">등록된 캐릭터</h2>
         {characters.length === 0 ? (
-          <p className="text-sm text-neutral-400">아직 등록된 캐릭터가 없어요.</p>
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">아직 등록된 캐릭터가 없어요.</p>
         ) : (
           groupedCharacters.map(([label, group]) => (
             <div key={label || "__unassigned"}>
               <div className="mb-2 flex items-center gap-2 text-xs">
-                <span className="font-semibold text-neutral-600">{label || "원정대 미지정"}</span>
+                <span className="font-semibold text-neutral-600 dark:text-neutral-400">{label || "원정대 미지정"}</span>
                 {group.find((c) => c.is_main_character) && (
-                  <span className="text-neutral-400">
+                  <span className="text-neutral-400 dark:text-neutral-500">
                     대표: {group.find((c) => c.is_main_character)!.name}
                   </span>
                 )}
@@ -224,14 +224,14 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                 {group.map((c) => (
                   <li
                     key={c.id}
-                    className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900"
+                    className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
                   >
                     <div>
                       <span className="font-medium">
                         {c.is_main_character && <span className="mr-1 text-amber-500">★</span>}
                         {c.name}
                       </span>{" "}
-                      <span className="text-neutral-400">
+                      <span className="text-neutral-400 dark:text-neutral-500">
                         {c.class} · Lv.{c.item_level?.toLocaleString()}
                         {c.combat_power != null && ` · 전투력 ${c.combat_power.toLocaleString()}`} · {c.server}
                       </span>
@@ -241,12 +241,12 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                         <button
                           type="button"
                           onClick={() => handleSetMain(c)}
-                          className="text-xs text-neutral-400 hover:text-amber-500"
+                          className="text-xs text-neutral-400 hover:text-amber-500 dark:text-neutral-500"
                         >
                           대표로 설정
                         </button>
                       )}
-                      <label className="flex items-center gap-1 text-xs text-neutral-500">
+                      <label className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
                         <input
                           type="checkbox"
                           checked={c.is_gold_earner}
@@ -270,7 +270,7 @@ export default function CharacterManager({ initialCharacters }: { initialCharact
                             deleteCharacter(c.id);
                           });
                         }}
-                        className="text-xs text-red-500 hover:underline"
+                        className="text-xs text-red-500 hover:underline dark:text-red-400"
                       >
                         삭제
                       </button>

@@ -208,13 +208,13 @@ export default function ScreenCapture({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {!sharing ? (
             <button
               type="button"
               onClick={startShare}
-              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
             >
               화면 공유 시작
             </button>
@@ -222,7 +222,7 @@ export default function ScreenCapture({
             <button
               type="button"
               onClick={stopShare}
-              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700"
+              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 dark:border-neutral-700 dark:text-neutral-300"
             >
               화면 공유 중지
             </button>
@@ -232,37 +232,37 @@ export default function ScreenCapture({
             <button
               type="button"
               onClick={captureFrame}
-              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
             >
               지금 프레임 캡처
             </button>
           )}
         </div>
 
-        {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
         <video
           ref={videoRef}
           muted
           playsInline
           className={[
-            "w-full rounded-md border border-neutral-200 bg-neutral-900",
+            "w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800",
             sharing && !frozen ? "" : "hidden",
           ].join(" ")}
         />
         {!sharing && (
-          <p className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-400">
+          <p className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
             화면 공유를 시작하면 여기에 미리보기가 나와요. 로스트아크 창을 선택해주세요.
           </p>
         )}
 
         {frozen && (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
               필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등
               최소한만 딱 자르는 게 좋아요).
             </p>
-            <div className="relative w-full overflow-hidden rounded-md border border-neutral-200">
+            <div className="relative w-full overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
               <canvas
                 ref={frozenCanvasRef}
                 className="w-full cursor-crosshair"
@@ -287,7 +287,7 @@ export default function ScreenCapture({
               <select
                 value={templateType}
                 onChange={(e) => setTemplateType(e.target.value as TemplateType)}
-                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
               >
                 {(Object.keys(TEMPLATE_TYPE_LABEL) as TemplateType[]).map((t) => (
                   <option key={t} value={t}>
@@ -300,7 +300,7 @@ export default function ScreenCapture({
                 <select
                   value={selectedRaidId}
                   onChange={(e) => setSelectedRaidId(e.target.value)}
-                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900"
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                 >
                   {raids.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -313,7 +313,7 @@ export default function ScreenCapture({
               <button
                 type="button"
                 onClick={retake}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700"
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:text-neutral-300"
               >
                 다시 캡처
               </button>
@@ -331,36 +331,36 @@ export default function ScreenCapture({
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-neutral-700">저장된 기준 이미지 ({templates.length}장)</h2>
+        <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">저장된 기준 이미지 ({templates.length}장)</h2>
         {templates.length === 0 ? (
-          <p className="text-sm text-neutral-400">아직 저장된 기준 이미지가 없어요.</p>
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">아직 저장된 기준 이미지가 없어요.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {templates.map((t) => {
               const raid = t.raid_id ? raidsById.get(t.raid_id) : null;
               const typeLabel = TEMPLATE_TYPE_LABEL[t.template_type as TemplateType] ?? t.template_type;
               return (
-                <div key={t.id} className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                <div key={t.id} className="overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
                   {t.url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={t.url}
                       alt={typeLabel}
-                      className="aspect-video w-full bg-neutral-100 object-contain"
+                      className="aspect-video w-full bg-neutral-100 object-contain dark:bg-neutral-800"
                     />
                   ) : (
-                    <div className="flex aspect-video w-full items-center justify-center bg-neutral-100 text-xs text-neutral-400">
+                    <div className="flex aspect-video w-full items-center justify-center bg-neutral-100 text-xs text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500">
                       미리보기 없음
                     </div>
                   )}
                   <div className="flex flex-col gap-0.5 px-2 py-1.5 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="text-neutral-700">{typeLabel}</span>
-                      <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline">
+                      <span className="text-neutral-700 dark:text-neutral-300">{typeLabel}</span>
+                      <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline dark:text-red-400">
                         삭제
                       </button>
                     </div>
-                    {raid && <span className="text-neutral-400">{raid.name} {raid.difficulty}</span>}
+                    {raid && <span className="text-neutral-400 dark:text-neutral-500">{raid.name} {raid.difficulty}</span>}
                   </div>
                 </div>
               );

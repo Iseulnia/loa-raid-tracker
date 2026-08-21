@@ -18,13 +18,26 @@ export const metadata: Metadata = {
   description: "친구들끼리 쓰는 로스트아크 주간 레이드 체크리스트",
 };
 
+// localStorage에 저장된 테마를 body가 그려지기 전에 적용해서 깜빡임(FOUC)을 막는다.
+const themeInitScript = `
+try {
+  var theme = localStorage.getItem('theme');
+  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+  }
+} catch (e) {}
+`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
         <NavBar />
         {children}
       </body>

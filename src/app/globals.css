@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* .dark 클래스(또는 그 하위)일 때만 dark: 유틸리티가 적용되도록 함 — OS 설정이 아니라 우리 토글 버튼으로 켜고 끔 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

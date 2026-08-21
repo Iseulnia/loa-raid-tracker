@@ -189,13 +189,13 @@ export default function AutoDetectRunner({
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4">
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={selectedCharacterId}
           onChange={(e) => setSelectedCharacterId(e.target.value)}
           disabled={sharing}
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 disabled:opacity-50"
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
         >
           {characters.length === 0 && <option value="">캐릭터 없음</option>}
           {characters.map((c) => (
@@ -210,7 +210,7 @@ export default function AutoDetectRunner({
             type="button"
             onClick={startShare}
             disabled={characters.length === 0 || usableTemplates.length === 0}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
           >
             자동 감지 시작
           </button>
@@ -218,54 +218,56 @@ export default function AutoDetectRunner({
           <button
             type="button"
             onClick={stopShare}
-            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700"
+            className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 dark:border-neutral-700 dark:text-neutral-300"
           >
             중지
           </button>
         )}
 
-        <span className="text-sm text-neutral-500">{statusText}</span>
+        <span className="text-sm text-neutral-500 dark:text-neutral-400">{statusText}</span>
       </div>
 
       {usableTemplates.length === 0 && (
-        <p className="mb-2 text-xs text-amber-600">
+        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
           아직 사용 가능한 &ldquo;레이드 결과화면&rdquo; 템플릿이 없어요. 아래에서 먼저 추가해주세요.
         </p>
       )}
-      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <video
         ref={videoRef}
         muted
         playsInline
-        className={["w-full rounded-md border border-neutral-200 bg-neutral-900", sharing ? "" : "hidden"].join(" ")}
+        className={["w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800", sharing ? "" : "hidden"].join(" ")}
       />
       <canvas ref={frameCanvasRef} className="hidden" />
 
       {lastMatchDebug && sharing && (
-        <p className="mt-2 text-xs text-neutral-400">
+        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
           최근 비교: {lastMatchDebug.label} (유사도 {Math.round(lastMatchDebug.score * 100)}%, 기준{" "}
           {Math.round(MATCH_THRESHOLD * 100)}%)
         </p>
       )}
 
       {events.length > 0 && (
-        <div className="mt-4 border-t border-neutral-100 pt-3">
-          <h3 className="mb-2 text-xs font-semibold text-neutral-500">자동 체크 기록</h3>
+        <div className="mt-4 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+          <h3 className="mb-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">자동 체크 기록</h3>
           <ul className="flex flex-col gap-1.5">
             {events.map((e) => (
               <li
                 key={e.id}
                 className={[
                   "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs",
-                  e.undone ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through" : "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  e.undone
+                    ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-500"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
                 ].join(" ")}
               >
                 <span>
                   {e.raidLabel} · {new Date(e.at).toLocaleTimeString()}
                 </span>
                 {!e.undone && (
-                  <button type="button" onClick={() => undoEvent(e)} className="text-red-500 hover:underline">
+                  <button type="button" onClick={() => undoEvent(e)} className="text-red-500 hover:underline dark:text-red-400">
                     취소
                   </button>
                 )}
