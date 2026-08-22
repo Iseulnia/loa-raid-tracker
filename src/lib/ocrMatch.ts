@@ -15,16 +15,44 @@ function getWorker(): Promise<Tesseract.Worker> {
   return workerPromise;
 }
 
-/** 프레임에서 crop 영역만 잘라, 작은 글자도 잘 읽히도록 확대해서 캔버스로 만든다. */
+/** 그레이스케일로 바꾸고 밝기 대비를 최대로 늘린다(min~max를 0~255로 스트레칭). 게임 UI 텍스트는
+ *  화려한 배경 위에 흐릿하게 떠 있는 경우가 많아서, 대비를 또렷하게 만들어주면 OCR 인식률이 꽤 올라간다. */
+function enhanceContrast(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d")!;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  let min = 255;
+  let max = 0;
+  const gray = new Float32Array(canvas.width * canvas.height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[p] = g;
+    if (g < min) min = g;
+    if (g > max) max = g;
+  }
+
+  const range = Math.max(1, max - min);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const stretched = ((gray[p] - min) / range) * 255;
+    data[i] = data[i + 1] = data[i + 2] = stretched;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+/** 프레임에서 crop 영역만 잘라, 작은 글자도 잘 읽히도록 확대 + 대비 강화해서 캔버스로 만든다. */
 function cropRegionForOcr(source: CanvasImageSource, sourceW: number, sourceH: number, crop: CropPct): HTMLCanvasElement {
   const sw = crop.wPct * sourceW;
   const sh = crop.hPct * sourceH;
-  const scale = Math.max(1, 240 / sw); // 원본이 너무 작으면 최소 폭 240px 정도로 확대
+  const scale = Math.max(1, 320 / sw); // 원본이 너무 작으면 최소 폭 320px 정도로 확대
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(sw * scale);
   canvas.height = Math.round(sh * scale);
   const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(source, crop.xPct * sourceW, crop.yPct * sourceH, sw, sh, 0, 0, canvas.width, canvas.height);
+  enhanceContrast(canvas);
   return canvas;
 }
 
@@ -36,6 +64,9 @@ export async function recognizeRegionText(
 ): Promise<string> {
   const worker = await getWorker();
   const canvas = cropRegionForOcr(source, sourceW, sourceH, crop);
+  // 캐릭터 이름/결과화면 텍스트는 한 줄짜리 UI 라벨이라, 문서용 자동 레이아웃 분석(기본값)보다
+  // "한 줄로 취급"하도록 지정하면 훨씬 안정적으로 인식된다.
+  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE });
   const { data } = await worker.recognize(canvas);
   return data.text.trim();
 }
@@ -81,6 +112,9 @@ export async function recognizeParticipationPanel(
 ): Promise<RaidRowStatus[]> {
   const worker = await getWorker();
   const canvas = cropRegionForOcr(source, sourceW, sourceH, crop);
+  // 참여현황 패널은 아이콘/여백으로 뚝뚝 끊긴 여러 줄이라, "문서처럼 자동 분석"보다
+  // "흩어진 텍스트를 순서 상관없이 최대한 찾아라"에 가까운 모드가 더 잘 맞는다.
+  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT });
   const { data } = await worker.recognize(canvas, {}, { blocks: true });
   const lines = flattenLines(data);
   if (lines.length === 0) return [];
