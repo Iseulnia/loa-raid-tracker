@@ -3,20 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
 import { findBestRowMatch, sampleBadgeRegion, sampleNameTemplate, greenFraction, type CropPct } from "@/lib/rowScan";
-import { sampleFrameCrop, sampleTemplateImage, similarity } from "@/lib/templateMatch";
+import { recognizeRegionText, matchCharacterName } from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string };
 type CharacterRaidRow = { character_id: string; raid_id: string };
 type StatusRowTemplate = { id: string; raidLabel: string; crop: CropPct; badgeCrop: CropPct; url: string };
-type CharacterNameTemplate = { id: string; characterId: string; crop: CropPct; url: string };
+/** 캐릭터 이름이 뜨는 화면 영역 하나(누구 이름이든 그때그때 OCR로 읽어서 매칭하므로 캐릭터별로 여러 개 필요 없음). */
+type CharacterNameRegion = { id: string; crop: CropPct };
 
 // 결과화면 매칭(88%)보다는 관대하게 — 이름표 텍스트 자체가 작고, 목록 스크롤 중이라 프레임이 살짝
 // 흔들릴 수 있어서 너무 빡빡하면 아예 못 찾을 수 있음. 실사용하며 조정 필요할 수 있음.
 const NAME_MATCH_THRESHOLD = 0.85;
 const BADGE_GREEN_THRESHOLD = 0.12;
-// 캐릭터 이름표는 화면 메뉴 안에서 위치가 고정이라(스크롤 없음), 결과화면 매칭과 같은 방식(색상+경계)을 그대로 씀.
-const CHARACTER_MATCH_THRESHOLD = 0.85;
 const SCAN_INTERVAL_MS = 900;
 
 type FoundStatus = "checking" | "applied" | "not-in-homework" | "failed";
@@ -29,26 +28,27 @@ const STATUS_LABEL: Record<FoundStatus, string> = {
   failed: "체크 실패",
 };
 
+type OcrStatus = "idle" | "recognizing" | "matched" | "no-match";
+
 export default function StatusPanelScanner({
   characters,
   raids,
   characterRaids,
   templates,
-  characterNameTemplates,
+  characterNameRegions,
 }: {
   characters: CharacterOption[];
   raids: RaidOption[];
   characterRaids: CharacterRaidRow[];
   templates: StatusRowTemplate[];
-  characterNameTemplates: CharacterNameTemplate[];
+  characterNameRegions: CharacterNameRegion[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const nameSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
-  const charImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const charSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const foundLabelsRef = useRef<Set<string>>(new Set());
   const characterLockedRef = useRef(false);
@@ -56,6 +56,7 @@ export default function StatusPanelScanner({
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
   const [autoDetectedCharacterId, setAutoDetectedCharacterId] = useState<string | null>(null);
+  const [ocrStatus, setOcrStatus] = useState<OcrStatus>("idle");
   useEffect(() => {
     selectedCharacterIdRef.current = selectedCharacterId;
   }, [selectedCharacterId]);
@@ -73,16 +74,6 @@ export default function StatusPanelScanner({
       imagesRef.current.set(t.id, img);
     }
   }, [templates]);
-
-  useEffect(() => {
-    for (const t of characterNameTemplates) {
-      if (charImagesRef.current.has(t.id)) continue;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = t.url;
-      charImagesRef.current.set(t.id, img);
-    }
-  }, [characterNameTemplates]);
 
   useEffect(() => {
     return () => {
@@ -112,6 +103,47 @@ export default function StatusPanelScanner({
     characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
   }
 
+  async function attemptCharacterOcr() {
+    const region = characterNameRegions[0];
+    const video = videoRef.current;
+    const ocrCanvas = ocrCanvasRef.current;
+    if (!region || !video || !ocrCanvas) return;
+
+    setOcrStatus("recognizing");
+    try {
+      // 화면공유 시작 직후엔 아직 비디오 프레임이 준비 안 됐을 수 있어서 살짝 기다린다.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (video.videoWidth === 0) await new Promise((resolve) => setTimeout(resolve, 800));
+      if (video.videoWidth === 0) {
+        setOcrStatus("no-match");
+        return;
+      }
+
+      ocrCanvas.width = video.videoWidth;
+      ocrCanvas.height = video.videoHeight;
+      const ctx = ocrCanvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, ocrCanvas.width, ocrCanvas.height);
+
+      const text = await recognizeRegionText(ocrCanvas, ocrCanvas.width, ocrCanvas.height, region.crop);
+      const matched = matchCharacterName(text, characters);
+
+      if (characterLockedRef.current) return; // OCR 처리 중 사용자가 이미 수동으로 캐릭터를 골랐으면 덮어쓰지 않음
+
+      if (matched) {
+        characterLockedRef.current = true;
+        selectedCharacterIdRef.current = matched.id;
+        setSelectedCharacterId(matched.id);
+        setAutoDetectedCharacterId(matched.id);
+        setOcrStatus("matched");
+      } else {
+        setOcrStatus("no-match");
+      }
+    } catch {
+      setOcrStatus("no-match");
+    }
+  }
+
   async function startScan() {
     setError("");
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -130,12 +162,14 @@ export default function StatusPanelScanner({
         await videoRef.current.play();
       }
       foundLabelsRef.current = new Set();
-      characterLockedRef.current = characterNameTemplates.length === 0; // 등록된 이름표가 없으면 자동 인식 자체를 안 함
+      characterLockedRef.current = characterNameRegions.length === 0; // 등록된 인식 영역이 없으면 자동 인식 자체를 안 함
       setAutoDetectedCharacterId(null);
+      setOcrStatus("idle");
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
       intervalRef.current = setInterval(runScanTick, SCAN_INTERVAL_MS);
+      if (characterNameRegions.length > 0) void attemptCharacterOcr();
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
     }
@@ -152,35 +186,6 @@ export default function StatusPanelScanner({
     setScanning(false);
   }
 
-  function tryDetectCharacter(canvas: HTMLCanvasElement) {
-    let best: { characterId: string; score: number } | null = null;
-    for (const t of characterNameTemplates) {
-      const img = charImagesRef.current.get(t.id);
-      if (!img || !img.complete || img.naturalWidth === 0) continue;
-      try {
-        let templateSample = charSampleCacheRef.current.get(t.id);
-        if (!templateSample) {
-          templateSample = sampleTemplateImage(img, t.crop);
-          charSampleCacheRef.current.set(t.id, templateSample);
-        }
-        const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
-        const score = similarity(frameSample, templateSample);
-        if (!best || score > best.score) best = { characterId: t.characterId, score };
-      } catch {
-        continue;
-      }
-    }
-    if (best && best.score >= CHARACTER_MATCH_THRESHOLD) {
-      characterLockedRef.current = true;
-      // ref를 여기서 바로 갱신한다 — setState는 다음 렌더에서야 useEffect로 반영되는데,
-      // 이 함수 직후 같은 tick 안에서 레이드 인식까지 이어지면 그 사이 ref가 아직 예전 값이라
-      // applyFound()가 엉뚱한(또는 소유하지 않은) 캐릭터로 체크를 시도해 실패하는 문제가 있었음.
-      selectedCharacterIdRef.current = best.characterId;
-      setSelectedCharacterId(best.characterId);
-      setAutoDetectedCharacterId(best.characterId);
-    }
-  }
-
   function runScanTick() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -190,8 +195,6 @@ export default function StatusPanelScanner({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    if (!characterLockedRef.current) tryDetectCharacter(canvas);
 
     for (const t of templates) {
       if (foundLabelsRef.current.has(t.raidLabel)) continue; // 이미 찾은 레이드는 다시 안 봄
@@ -257,8 +260,14 @@ export default function StatusPanelScanner({
         </select>
         {autoDetectedCharacterId === selectedCharacterId && (
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
-            자동 인식됨
+            OCR로 자동 인식됨
           </span>
+        )}
+        {scanning && ocrStatus === "recognizing" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">캐릭터 이름 인식 중...</span>
+        )}
+        {scanning && ocrStatus === "no-match" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">자동 인식 실패 — 직접 선택해주세요</span>
         )}
 
         {!scanning ? (
@@ -290,9 +299,9 @@ export default function StatusPanelScanner({
           아직 등록된 &ldquo;레이드 참여현황 이름표&rdquo; 기준 이미지가 없어요. 아래에서 먼저 추가해주세요.
         </p>
       )}
-      {characterNameTemplates.length === 0 && (
+      {characterNameRegions.length === 0 && (
         <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-400">
-          캐릭터 이름표를 등록해두면 캐릭터를 직접 고르지 않아도 자동으로 인식돼요 (선택 사항).
+          캐릭터 이름 인식 영역을 등록해두면 캐릭터를 직접 고르지 않아도 OCR로 자동 인식돼요 (선택 사항).
         </p>
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -304,6 +313,7 @@ export default function StatusPanelScanner({
         className={["w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800", scanning ? "" : "hidden"].join(" ")}
       />
       <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={ocrCanvasRef} className="hidden" />
 
       {found.length > 0 && (
         <div className="mt-4 border-t border-neutral-100 pt-3 dark:border-neutral-800">

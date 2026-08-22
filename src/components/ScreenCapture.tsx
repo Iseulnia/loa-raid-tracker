@@ -25,7 +25,7 @@ const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
   result_screen: "레이드 결과화면(레이드명)",
   gate_checkmark: "관문 체크마크",
   status_row: "레이드 참여현황 이름표(스크롤 목록)",
-  character_name: "캐릭터 이름표(메뉴 화면 고정 위치)",
+  character_name: "캐릭터 이름 인식 영역(OCR, 메뉴 화면 고정 위치)",
 };
 
 // 게임 내 "레이드 참여 현황" 패널의 표기가 앱의 레이드 이름과 달라서, 고를 때 헷갈리지 않도록 힌트로 보여준다.
@@ -48,7 +48,7 @@ export default function ScreenCapture({
   allowedTypes = DEFAULT_ALLOWED_TYPES,
 }: {
   raids: RaidOption[];
-  /** 'character_name' 유형을 쓸 때만 필요 (어느 캐릭터의 이름표인지 고르는 드롭다운용). */
+  /** 저장된 기준 이미지 목록에서 예전 방식(캐릭터별) character_name 템플릿의 캐릭터명을 표시하는 데만 쓰인다. */
   characters?: CharacterOption[];
   initialTemplates: TemplateRow[];
   /** 이 화면에서 고를 수 있는 기준 이미지 유형을 제한한다 (탭마다 다른 용도로 쓰기 위함). */
@@ -82,7 +82,6 @@ export default function ScreenCapture({
 
   const [templateType, setTemplateType] = useState<TemplateType>(allowedTypes[0] ?? "clear_banner");
   const [selectedRaidId, setSelectedRaidId] = useState(raids[0]?.id ?? "");
-  const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState(initialTemplates);
@@ -293,11 +292,6 @@ export default function ScreenCapture({
       setError("레이드 결과화면 유형은 어떤 레이드인지 선택해주세요.");
       return;
     }
-    if (templateType === "character_name" && !selectedCharacterId) {
-      setError("어떤 캐릭터의 이름표인지 선택해주세요.");
-      return;
-    }
-
     setSaving(true);
     setError("");
     try {
@@ -318,10 +312,10 @@ export default function ScreenCapture({
         hPct: selection.h / canvas.height,
       };
       const raidId = templateType === "result_screen" ? selectedRaidId : null;
-      const characterId = templateType === "character_name" ? selectedCharacterId : null;
+      const characterId: string | null = null; // OCR 방식으로 바뀌면서 캐릭터별로 등록할 필요가 없어짐
 
       const supabase = createClient();
-      const path = `${templateType}/${raidId ?? characterId ?? "shared"}/${Date.now()}.png`;
+      const path = `${templateType}/${raidId ?? "shared"}/${Date.now()}.png`;
       const { error: uploadError } = await supabase.storage
         .from("raid-clear-templates")
         .upload(path, blob, { contentType: "image/png" });
@@ -460,7 +454,7 @@ export default function ScreenCapture({
                   ? "① 먼저 레이드 이름 텍스트 부분만 드래그로 선택하세요 (예: '페투스 안 크라그마')."
                   : "② 이제 그 옆에 있는 '참여 완료' 배지(초록 체크) 부분을 드래그로 선택하세요."
                 : templateType === "character_name"
-                  ? "게임 메뉴 화면 좌측 하단의 캐릭터 이름(레벨 포함해도 무방) 부분만 드래그로 선택하세요."
+                  ? "게임 메뉴 화면 좌측 하단의 캐릭터 이름(레벨 포함해도 무방) 부분만 드래그로 선택하세요. 한 번만 등록하면 어떤 캐릭터든 OCR로 자동 인식돼요."
                   : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
             </p>
 
@@ -506,21 +500,6 @@ export default function ScreenCapture({
                     <option key={name} value={name}>
                       {name}
                       {GAME_PANEL_ALIASES[name] ? ` (게임 내: ${GAME_PANEL_ALIASES[name]})` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {templateType === "character_name" && (
-                <select
-                  value={selectedCharacterId}
-                  onChange={(e) => setSelectedCharacterId(e.target.value)}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                >
-                  {characters.length === 0 && <option value="">캐릭터 없음</option>}
-                  {characters.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
                     </option>
                   ))}
                 </select>
