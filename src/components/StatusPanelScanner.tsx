@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
 import { findBestRowMatch, sampleBadgeRegion, sampleNameTemplate, greenFraction, type CropPct } from "@/lib/rowScan";
+import { sampleFrameCrop, sampleTemplateImage, similarity } from "@/lib/templateMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string };
 type CharacterRaidRow = { character_id: string; raid_id: string };
 type StatusRowTemplate = { id: string; raidLabel: string; crop: CropPct; badgeCrop: CropPct; url: string };
+type CharacterNameTemplate = { id: string; characterId: string; crop: CropPct; url: string };
 
 // 결과화면 매칭(88%)보다는 관대하게 — 이름표 텍스트 자체가 작고, 목록 스크롤 중이라 프레임이 살짝
 // 흔들릴 수 있어서 너무 빡빡하면 아예 못 찾을 수 있음. 실사용하며 조정 필요할 수 있음.
 const NAME_MATCH_THRESHOLD = 0.85;
 const BADGE_GREEN_THRESHOLD = 0.12;
+// 캐릭터 이름표는 화면 메뉴 안에서 위치가 고정이라(스크롤 없음), 결과화면 매칭과 같은 방식(색상+경계)을 그대로 씀.
+const CHARACTER_MATCH_THRESHOLD = 0.85;
 const SCAN_INTERVAL_MS = 900;
 
 type FoundStatus = "checking" | "applied" | "not-in-homework" | "failed";
@@ -30,22 +34,28 @@ export default function StatusPanelScanner({
   raids,
   characterRaids,
   templates,
+  characterNameTemplates,
 }: {
   characters: CharacterOption[];
   raids: RaidOption[];
   characterRaids: CharacterRaidRow[];
   templates: StatusRowTemplate[];
+  characterNameTemplates: CharacterNameTemplate[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const nameSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
+  const charImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const charSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const foundLabelsRef = useRef<Set<string>>(new Set());
+  const characterLockedRef = useRef(false);
   const selectedCharacterIdRef = useRef("");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
+  const [autoDetectedCharacterId, setAutoDetectedCharacterId] = useState<string | null>(null);
   useEffect(() => {
     selectedCharacterIdRef.current = selectedCharacterId;
   }, [selectedCharacterId]);
@@ -63,6 +73,16 @@ export default function StatusPanelScanner({
       imagesRef.current.set(t.id, img);
     }
   }, [templates]);
+
+  useEffect(() => {
+    for (const t of characterNameTemplates) {
+      if (charImagesRef.current.has(t.id)) continue;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = t.url;
+      charImagesRef.current.set(t.id, img);
+    }
+  }, [characterNameTemplates]);
 
   useEffect(() => {
     return () => {
@@ -85,6 +105,12 @@ export default function StatusPanelScanner({
     return map;
   }, [raids, characterRaids]);
 
+  function selectCharacterManually(characterId: string) {
+    setSelectedCharacterId(characterId);
+    setAutoDetectedCharacterId(null);
+    characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
+  }
+
   async function startScan() {
     setError("");
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -103,6 +129,8 @@ export default function StatusPanelScanner({
         await videoRef.current.play();
       }
       foundLabelsRef.current = new Set();
+      characterLockedRef.current = characterNameTemplates.length === 0; // 등록된 이름표가 없으면 자동 인식 자체를 안 함
+      setAutoDetectedCharacterId(null);
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
@@ -123,6 +151,31 @@ export default function StatusPanelScanner({
     setScanning(false);
   }
 
+  function tryDetectCharacter(canvas: HTMLCanvasElement) {
+    let best: { characterId: string; score: number } | null = null;
+    for (const t of characterNameTemplates) {
+      const img = charImagesRef.current.get(t.id);
+      if (!img || !img.complete || img.naturalWidth === 0) continue;
+      try {
+        let templateSample = charSampleCacheRef.current.get(t.id);
+        if (!templateSample) {
+          templateSample = sampleTemplateImage(img, t.crop);
+          charSampleCacheRef.current.set(t.id, templateSample);
+        }
+        const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
+        const score = similarity(frameSample, templateSample);
+        if (!best || score > best.score) best = { characterId: t.characterId, score };
+      } catch {
+        continue;
+      }
+    }
+    if (best && best.score >= CHARACTER_MATCH_THRESHOLD) {
+      characterLockedRef.current = true;
+      setSelectedCharacterId(best.characterId);
+      setAutoDetectedCharacterId(best.characterId);
+    }
+  }
+
   function runScanTick() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -132,6 +185,8 @@ export default function StatusPanelScanner({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if (!characterLockedRef.current) tryDetectCharacter(canvas);
 
     for (const t of templates) {
       if (foundLabelsRef.current.has(t.raidLabel)) continue; // 이미 찾은 레이드는 다시 안 봄
@@ -184,9 +239,8 @@ export default function StatusPanelScanner({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={selectedCharacterId}
-          onChange={(e) => setSelectedCharacterId(e.target.value)}
-          disabled={scanning}
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          onChange={(e) => selectCharacterManually(e.target.value)}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
         >
           {characters.length === 0 && <option value="">캐릭터 없음</option>}
           {characters.map((c) => (
@@ -195,6 +249,11 @@ export default function StatusPanelScanner({
             </option>
           ))}
         </select>
+        {autoDetectedCharacterId === selectedCharacterId && (
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
+            자동 인식됨
+          </span>
+        )}
 
         {!scanning ? (
           <button
@@ -223,6 +282,11 @@ export default function StatusPanelScanner({
       {templates.length === 0 && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
           아직 등록된 &ldquo;레이드 참여현황 이름표&rdquo; 기준 이미지가 없어요. 아래에서 먼저 추가해주세요.
+        </p>
+      )}
+      {characterNameTemplates.length === 0 && (
+        <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-400">
+          캐릭터 이름표를 등록해두면 캐릭터를 직접 고르지 않아도 자동으로 인식돼요 (선택 사항).
         </p>
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}

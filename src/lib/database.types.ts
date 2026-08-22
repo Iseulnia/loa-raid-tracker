@@ -85,6 +85,7 @@ export type Database = {
           crop: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           raid_label: string | null;
           badge_crop: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
+          character_id: string | null;
           storage_path: string;
           created_by: string;
           created_at: string;
@@ -96,6 +97,7 @@ export type Database = {
           crop?: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           raid_label?: string | null;
           badge_crop?: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
+          character_id?: string | null;
           storage_path: string;
           created_by: string;
           created_at?: string;

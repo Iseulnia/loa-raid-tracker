@@ -126,6 +126,14 @@
   "지평의 성당"=성당, "종막 : 카제로스"=종막, "4막 : 아르모체"=4막) 캡처 화면 드롭다운에 힌트로 병기함
   (`GAME_PANEL_ALIASES`, `ScreenCapture.tsx`)
 - 매칭 임계값(이름 85%, 배지 초록 비율 12%)은 추정치 — 아직 실사용 피드백 못 받음, 오탐/누락 있으면 튜닝 필요
+- 업로드 경로에 한글(레이드 이름)을 그대로 넣었다가 Supabase Storage 키 검증에서 거부(Invalid key)당한 적
+  있음 → 경로는 항상 ASCII만 쓰고, 실제 이름은 DB 컬럼에만 저장하도록 수정함 (이후 이런 템플릿류 경로 만들 때
+  항상 주의)
+- **캐릭터 자동 인식**: 게임 메뉴 화면 좌측 하단에 고정 위치로 뜨는 캐릭터 이름표를 캐릭터별로 등록해두면,
+  스캔 시작 시 캐릭터를 수동으로 고르지 않아도 자동으로 인식됨 (`character_name` 템플릿 타입, `character_id`
+  컬럼). 참여현황 이름표와 달리 이건 스크롤 없이 위치 고정이라 `templateMatch.ts`의 기존 고정 위치 비교를
+  그대로 재사용함 (rowScan.ts의 슬라이딩 검색 불필요). 자동 인식은 선택 사항 — 안 등록해도 수동 드롭다운으로
+  평소처럼 동작하고, 스캔 중 드롭다운을 직접 바꾸면 그 뒤로는 자동 인식이 덮어쓰지 않음
 
 **직업 각인 표시 & 서포터/딜러 색상 구분**
 - 로스트아크 오픈 API의 `/armories/characters/{name}/engravings`는 새 ArkPassive 체계에서 범용 각인만 주고
@@ -164,6 +172,8 @@
 9. `migration_2026-08-22i_class_engraving.sql` — characters.class_engraving 컬럼 추가 (직업 각인 표시용)
 10. `migration_2026-08-22j_status_row_templates.sql` — raid_clear_templates에 status_row 타입 +
     raid_label/badge_crop 컬럼 추가 (참여현황 패널 스캔용)
+11. `migration_2026-08-22k_character_name_templates.sql` — raid_clear_templates에 character_name 타입 +
+    character_id 컬럼 추가 (메뉴 감지 탭 캐릭터 자동 인식용)
 
 새 마이그레이션을 추가할 땐 이 파일 이름 규칙(`migration_YYYY-MM-DD[a-z]_설명.sql`)을 따르고, `schema.sql`도
 같이 최신화해서 새로 설치하는 사람도 한 번에 맞는 스키마를 받도록 유지하세요.

@@ -243,11 +243,12 @@ export async function setCharacterRaids(characterId: string, selections: Charact
   revalidatePath("/");
 }
 
-export type TemplateType = "clear_banner" | "result_screen" | "gate_checkmark" | "status_row";
+export type TemplateType = "clear_banner" | "result_screen" | "gate_checkmark" | "status_row" | "character_name";
 export type CropPct = { xPct: number; yPct: number; wPct: number; hPct: number };
 
 /** 화면공유로 캡처해서 잘라낸 영역을 Storage에 올린 뒤, 무슨 용도의 기준 이미지인지 DB에 기록한다.
- *  'status_row'는 난이도 무관 레이드 이름(raidLabel)과 "참여 완료" 배지의 상대 위치(badgeCrop)도 함께 저장한다. */
+ *  'status_row'는 난이도 무관 레이드 이름(raidLabel)과 "참여 완료" 배지의 상대 위치(badgeCrop)도 함께 저장하고,
+ *  'character_name'은 어느 캐릭터의 이름표인지(characterId)를 저장한다. */
 export async function saveRaidClearTemplate(params: {
   raidId: string | null;
   templateType: TemplateType;
@@ -255,6 +256,7 @@ export async function saveRaidClearTemplate(params: {
   storagePath: string;
   raidLabel?: string | null;
   badgeCrop?: CropPct | null;
+  characterId?: string | null;
 }) {
   const { supabase, user } = await requireUser();
   const { error } = await supabase.from("raid_clear_templates").insert({
@@ -263,11 +265,13 @@ export async function saveRaidClearTemplate(params: {
     crop: params.crop,
     raid_label: params.raidLabel ?? null,
     badge_crop: params.badgeCrop ?? null,
+    character_id: params.characterId ?? null,
     storage_path: params.storagePath,
     created_by: user.id,
   });
   if (error) throw new Error(error.message);
   revalidatePath("/auto-detect");
+  revalidatePath("/menu-detect");
 }
 
 export async function deleteRaidClearTemplate(templateId: string, storagePath: string) {
@@ -280,4 +284,5 @@ export async function deleteRaidClearTemplate(templateId: string, storagePath: s
   const { error } = await supabase.from("raid_clear_templates").delete().eq("id", templateId);
   if (error) throw new Error(error.message);
   revalidatePath("/auto-detect");
+  revalidatePath("/menu-detect");
 }
