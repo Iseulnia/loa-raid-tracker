@@ -247,7 +247,13 @@ export async function setCharacterRaids(characterId: string, selections: Charact
   revalidatePath("/");
 }
 
-export type TemplateType = "clear_banner" | "result_screen" | "gate_checkmark" | "status_row" | "character_name";
+export type TemplateType =
+  | "clear_banner"
+  | "result_screen"
+  | "gate_checkmark"
+  | "status_row"
+  | "character_name"
+  | "result_screen_ocr";
 export type CropPct = { xPct: number; yPct: number; wPct: number; hPct: number };
 
 /** 화면공유로 캡처해서 잘라낸 영역을 Storage에 올린 뒤, 무슨 용도의 기준 이미지인지 DB에 기록한다.

@@ -27,6 +27,7 @@ const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
   gate_checkmark: "관문 체크마크",
   status_row: "레이드 참여현황 이름표(스크롤 목록)",
   character_name: "캐릭터 이름 인식 영역(OCR, 메뉴 화면 고정 위치)",
+  result_screen_ocr: "레이드 결과화면 텍스트 인식 영역(OCR, 고정 위치)",
 };
 
 // 게임 내 "레이드 참여 현황" 패널의 표기가 앱의 레이드 이름과 달라서, 고를 때 헷갈리지 않도록 힌트로 보여준다.
@@ -462,7 +463,9 @@ export default function ScreenCapture({
                   : "② 이제 그 옆에 있는 '참여 완료' 배지(초록 체크) 부분을 드래그로 선택하세요."
                 : templateType === "character_name"
                   ? "게임 메뉴 화면 좌측 하단의 캐릭터 이름(레벨 포함해도 무방) 부분만 드래그로 선택하세요. 한 번만 등록하면 어떤 캐릭터든 OCR로 자동 인식돼요."
-                  : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
+                  : templateType === "result_screen_ocr"
+                    ? "레이드 결과화면에서 레이드명과 난이도가 함께 보이는 텍스트 부분만 드래그로 선택하세요 (예: '종막 : 최후의 날 [하드]'). 한 번만 등록하면 모든 레이드에 재사용돼요."
+                    : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
             </p>
 
             <div className="flex flex-wrap items-center gap-2">

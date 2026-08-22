@@ -75,3 +75,26 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
   if (best && best.dist <= Math.max(1, Math.ceil(best.character.name.length * 0.34))) return best.character;
   return null;
 }
+
+/**
+ * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드]" 등)와 레이드 목록을 비교해 어떤 레이드·난이도인지
+ * 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은 픽셀 비교로 계속 헷갈렸는데,
+ * 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도 둘 다 텍스트에 포함돼야 매칭으로 인정한다
+ * (하나만 맞으면 오탐 가능성이 커서 일부러 엄격하게 함 — 못 찾으면 다음 프레임에 다시 시도하면 되므로).
+ */
+export function matchRaidFromText<T extends { id: string; name: string; difficulty: string }>(
+  ocrText: string,
+  raids: T[]
+): T | null {
+  const normalizedOcr = normalize(ocrText);
+  if (!normalizedOcr) return null;
+
+  for (const r of raids) {
+    const name = normalize(r.name);
+    const difficulty = normalize(r.difficulty);
+    if (name && difficulty && normalizedOcr.includes(name) && normalizedOcr.includes(difficulty)) {
+      return r;
+    }
+  }
+  return null;
+}

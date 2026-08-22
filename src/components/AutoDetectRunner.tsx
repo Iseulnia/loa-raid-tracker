@@ -1,21 +1,16 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { sampleFrameCrop, sampleTemplateImage, similarity, type CropPct } from "@/lib/templateMatch";
+import { recognizeRegionText, matchRaidFromText, type CropPct } from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
-type ResultTemplate = { id: string; raid_id: string | null; crop: CropPct | null; url: string | null };
 type CheckKey = { character_id: string; raid_id: string };
 
-const MATCH_THRESHOLD = 0.88;
-// 1등과 2등(다른 레이드) 후보의 유사도 차이가 이만큼은 벌어져야 확신함 — 결과화면은 배경/체크마크가
-// 다 비슷해서 엉뚱한 레이드가 우연히 82~86%까지 올라오는 오탐이 있었음, 그래서 임계값만으로는 부족함
-const MATCH_MARGIN = 0.03;
-// 연속으로 이만큼 같은 레이드가 나와야 실제로 체크함 (화면 전환 중 프레임 하나가 우연히 튄 오탐 방지)
+const SCAN_INTERVAL_MS = 1500; // OCR은 픽셀 비교보다 느려서 이미지 비교 때보다 간격을 늘림
+// 연속으로 이만큼 같은 레이드가 나와야 실제로 체크함 (화면 전환 중 프레임 하나가 우연히 잘못 읽히는 것 방지)
 const CONFIRM_SCANS = 2;
-const SCAN_INTERVAL_MS = 1200;
 const RECHECK_COOLDOWN_MS = 30_000; // 같은 (캐릭터,레이드)를 짧은 시간 안에 반복 감지해도 다시 안 쏘게
 
 type AutoCheckEvent = {
@@ -29,20 +24,20 @@ type AutoCheckEvent = {
 
 export default function AutoDetectRunner({
   characters,
-  resultScreenTemplates,
+  resultScreenOcrRegion,
   raids,
   initialChecks,
 }: {
   characters: CharacterOption[];
-  resultScreenTemplates: ResultTemplate[];
+  resultScreenOcrRegion: CropPct | null;
   raids: RaidOption[];
   initialChecks: CheckKey[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ocrBusyRef = useRef(false);
   const lastTriggeredRef = useRef<Map<string, number>>(new Map()); // key -> timestamp
   const pendingMatchRef = useRef<{ raidId: string; count: number } | null>(null);
 
@@ -50,7 +45,7 @@ export default function AutoDetectRunner({
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
   const [statusText, setStatusText] = useState("대기 중");
-  const [lastMatchDebug, setLastMatchDebug] = useState<{ label: string; score: number } | null>(null);
+  const [lastOcrText, setLastOcrText] = useState("");
   const [checkedSet, setCheckedSet] = useState<Set<string>>(
     () => new Set(initialChecks.map((c) => `${c.character_id}:${c.raid_id}`))
   );
@@ -59,23 +54,6 @@ export default function AutoDetectRunner({
     checkedSetRef.current = checkedSet;
   }, [checkedSet]);
   const [events, setEvents] = useState<AutoCheckEvent[]>([]);
-
-  const raidsById = useMemo(() => new Map(raids.map((r) => [r.id, r])), [raids]);
-  const usableTemplates = useMemo(
-    () => resultScreenTemplates.filter((t): t is ResultTemplate & { url: string; crop: CropPct } => !!t.url && !!t.crop && !!t.raid_id),
-    [resultScreenTemplates]
-  );
-
-  // 템플릿 이미지를 미리 로드해둔다.
-  useEffect(() => {
-    for (const t of usableTemplates) {
-      if (imagesRef.current.has(t.id)) continue;
-      const img = new Image();
-      img.crossOrigin = "anonymous"; // Storage(다른 origin) 이미지를 캔버스에서 픽셀 비교하려면 필수 (없으면 캔버스가 오염돼 getImageData가 조용히 실패함)
-      img.src = t.url;
-      imagesRef.current.set(t.id, img);
-    }
-  }, [usableTemplates]);
 
   useEffect(() => {
     return () => {
@@ -103,6 +81,7 @@ export default function AutoDetectRunner({
       }
       setSharing(true);
       setStatusText("감지 중...");
+      pendingMatchRef.current = null;
       stream.getVideoTracks()[0]?.addEventListener("ended", stopShare);
       intervalRef.current = setInterval(runScan, SCAN_INTERVAL_MS);
     } catch {
@@ -122,67 +101,50 @@ export default function AutoDetectRunner({
     setStatusText("대기 중");
   }
 
-  function runScan() {
+  async function runScan() {
     const video = videoRef.current;
     const canvas = frameCanvasRef.current;
-    if (!video || !canvas || video.videoWidth === 0) return;
+    if (!video || !canvas || video.videoWidth === 0 || !resultScreenOcrRegion || ocrBusyRef.current) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    let best: { raidId: string; score: number; label: string } | null = null;
-    let secondBestScore = -Infinity; // best와 다른 레이드 중 가장 높은 점수 (margin 판단용)
-
+    ocrBusyRef.current = true;
     try {
-      for (const t of usableTemplates) {
-        const img = imagesRef.current.get(t.id);
-        if (!img || !img.complete || img.naturalWidth === 0) continue;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
-        const templateSample = sampleTemplateImage(img, t.crop);
-        const score = similarity(frameSample, templateSample);
-        const raid = raidsById.get(t.raid_id!);
-        const candidate = { raidId: t.raid_id!, score, label: raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음" };
+      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, resultScreenOcrRegion);
+      setLastOcrText(text);
 
-        if (!best || candidate.score > best.score) {
-          if (best && best.raidId !== candidate.raidId) secondBestScore = Math.max(secondBestScore, best.score);
-          best = candidate;
-        } else if (candidate.raidId !== best.raidId) {
-          secondBestScore = Math.max(secondBestScore, candidate.score);
-        }
+      const matched = matchRaidFromText(text, raids);
+
+      if (!matched) {
+        pendingMatchRef.current = null;
+        return;
+      }
+
+      const pending = pendingMatchRef.current;
+      pendingMatchRef.current =
+        pending && pending.raidId === matched.id ? { raidId: pending.raidId, count: pending.count + 1 } : { raidId: matched.id, count: 1 };
+
+      if (pendingMatchRef.current.count < CONFIRM_SCANS) return;
+
+      const raidLabel = `${matched.name} ${matched.difficulty}`;
+      const key = `${selectedCharacterId}:${matched.id}`;
+      const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
+      const alreadyChecked = checkedSetRef.current.has(key);
+      const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
+
+      if (!alreadyChecked && cooledDown) {
+        lastTriggeredRef.current.set(key, Date.now());
+        setStatusText(`${raidLabel} 감지됨 → 자동 체크 중...`);
+        triggerAutoCheck(matched.id, raidLabel);
       }
     } catch {
-      setStatusText("이미지 비교 중 오류가 발생했어요 (템플릿 이미지를 불러오지 못했을 수 있어요).");
-      return;
-    }
-
-    if (best) setLastMatchDebug({ label: best.label, score: best.score });
-
-    const confident = best !== null && best.score >= MATCH_THRESHOLD && best.score - secondBestScore >= MATCH_MARGIN;
-
-    if (!confident) {
-      pendingMatchRef.current = null;
-      return;
-    }
-
-    const pending = pendingMatchRef.current;
-    pendingMatchRef.current =
-      pending && pending.raidId === best!.raidId ? { raidId: pending.raidId, count: pending.count + 1 } : { raidId: best!.raidId, count: 1 };
-
-    if (pendingMatchRef.current.count < CONFIRM_SCANS) return;
-
-    const key = `${selectedCharacterId}:${best!.raidId}`;
-    const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
-    const alreadyChecked = checkedSetRef.current.has(key);
-    const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
-
-    if (!alreadyChecked && cooledDown) {
-      lastTriggeredRef.current.set(key, Date.now());
-      setStatusText(`${best!.label} 감지됨 → 자동 체크 중...`);
-      triggerAutoCheck(best!.raidId, best!.label);
+      setStatusText("텍스트 인식 중 오류가 발생했어요.");
+    } finally {
+      ocrBusyRef.current = false;
     }
   }
 
@@ -237,7 +199,7 @@ export default function AutoDetectRunner({
           <button
             type="button"
             onClick={startShare}
-            disabled={characters.length === 0 || usableTemplates.length === 0}
+            disabled={characters.length === 0 || !resultScreenOcrRegion}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
           >
             자동 감지 시작
@@ -255,9 +217,9 @@ export default function AutoDetectRunner({
         <span className="text-sm text-neutral-500 dark:text-neutral-400">{statusText}</span>
       </div>
 
-      {usableTemplates.length === 0 && (
+      {!resultScreenOcrRegion && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
-          아직 사용 가능한 &ldquo;레이드 결과화면&rdquo; 템플릿이 없어요. 아래에서 먼저 추가해주세요.
+          아직 &ldquo;레이드 결과화면 텍스트 인식 영역&rdquo;이 등록되지 않았어요. 아래에서 먼저 추가해주세요.
         </p>
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -270,11 +232,8 @@ export default function AutoDetectRunner({
       />
       <canvas ref={frameCanvasRef} className="hidden" />
 
-      {lastMatchDebug && sharing && (
-        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-400">
-          최근 비교: {lastMatchDebug.label} (유사도 {Math.round(lastMatchDebug.score * 100)}%, 기준{" "}
-          {Math.round(MATCH_THRESHOLD * 100)}%)
-        </p>
+      {lastOcrText && sharing && (
+        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-400">최근 인식된 텍스트: {lastOcrText}</p>
       )}
 
       {events.length > 0 && (
