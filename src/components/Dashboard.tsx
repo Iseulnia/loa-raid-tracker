@@ -226,10 +226,11 @@ export default function Dashboard({
     entries.sort((a, b) => {
       if (a.label === null) return 1;
       if (b.label === null) return -1;
-      // 캐릭터 순서 변경(드래그)에서 정한 순서를 그대로 반영 — 각 원정대의 가장 앞선(작은) sort_order 기준
-      const minA = Math.min(...a.characters.map((c) => c.sort_order));
-      const minB = Math.min(...b.characters.map((c) => c.sort_order));
-      return minA - minB;
+      // 원정대(계정) 순서는 예전처럼 아이템레벨 기준(본계 > 부계 > 부부계) 그대로 유지 — 캐릭터 순서
+      // 변경(드래그)은 원정대 "안"에서의 카드 순서만 바꾸고, 어느 원정대가 먼저 오는지는 안 건드린다.
+      const maxA = Math.max(...a.characters.map((c) => c.item_level ?? 0));
+      const maxB = Math.max(...b.characters.map((c) => c.item_level ?? 0));
+      return maxB - maxA;
     });
     return entries;
   }
@@ -347,21 +348,42 @@ export default function Dashboard({
     return map;
   }, [raids]);
 
-  // 로그인한 사람 기준 "내 캐릭터 전체"에서 레이드 이름별(난이도 무관) 클리어한 캐릭터 수 / 가야 하는 캐릭터 수
-  const myRaidCountByName = useMemo(() => {
-    const map = new Map<string, { done: number; total: number }>();
+  // 로그인한 사람 기준 "내 캐릭터 전체"에서 레이드 이름별로, 그 안의 난이도별 클리어한 캐릭터 수/전체 수와
+  // (골드 받기로 고른 것만) 그 레이드 이름 전체에서 받을 수 있는 골드 합계
+  const myRaidStatusByName = useMemo(() => {
+    type DifficultyStatus = { difficulty: string; sortOrder: number; done: number; total: number };
+    const map = new Map<string, { difficulties: Map<string, DifficultyStatus>; tradeable: number; bound: number }>();
     for (const character of characters) {
       if (character.owner_id !== currentUserId) continue;
+      const goldEarningIds = goldEarningRaidIdsFor(character);
       for (const raid of selectedRaidsFor(character)) {
-        const entry = map.get(raid.name) ?? { done: 0, total: 0 };
-        entry.total++;
-        if (isRaidClearedAtAll(character.id, raid)) entry.done++;
+        const entry = map.get(raid.name) ?? { difficulties: new Map(), tradeable: 0, bound: 0 };
+        const diffEntry = entry.difficulties.get(raid.difficulty) ?? {
+          difficulty: raid.difficulty,
+          sortOrder: raid.sort_order,
+          done: 0,
+          total: 0,
+        };
+        diffEntry.total++;
+        if (isRaidClearedAtAll(character.id, raid)) diffEntry.done++;
+        entry.difficulties.set(raid.difficulty, diffEntry);
+
+        if (character.is_gold_earner && goldEarningIds.has(raid.id)) {
+          const split = splitGold(raid);
+          entry.tradeable += split.tradeable;
+          entry.bound += split.bound;
+        }
         map.set(raid.name, entry);
       }
     }
-    return Array.from(map.entries()).sort(
-      (a, b) => (raidNameOrder.get(a[0]) ?? 0) - (raidNameOrder.get(b[0]) ?? 0)
-    );
+    return Array.from(map.entries())
+      .map(([raidName, v]) => ({
+        raidName,
+        difficulties: Array.from(v.difficulties.values()).sort((a, b) => a.sortOrder - b.sortOrder),
+        tradeable: v.tradeable,
+        bound: v.bound,
+      }))
+      .sort((a, b) => (raidNameOrder.get(a.raidName) ?? 0) - (raidNameOrder.get(b.raidName) ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characters, characterRaidMap, checkedSet, currentUserId, raidNameOrder]);
 
@@ -484,29 +506,44 @@ export default function Dashboard({
         </>
       )}
 
-      {myRaidCountByName.length > 0 && (
+      {myRaidStatusByName.length > 0 && (
         <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
           <h2 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">내 레이드별 현황</h2>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {myRaidCountByName.map(([raidName, { done, total }]) => {
-              const complete = done >= total;
-              return (
-                <div
-                  key={raidName}
-                  className={[
-                    "rounded-md border px-3 py-2 text-xs",
-                    complete
-                      ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
-                      : "border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/50",
-                  ].join(" ")}
-                >
-                  <div className="mb-0.5 truncate font-medium text-neutral-700 dark:text-neutral-300">{raidName}</div>
-                  <div className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
-                    {done} / {total}
-                  </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {myRaidStatusByName.map(({ raidName, difficulties, tradeable, bound }) => (
+              <div
+                key={raidName}
+                className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-800/50"
+              >
+                <div className="mb-1.5 font-medium text-neutral-700 dark:text-neutral-300">{raidName}</div>
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {difficulties.map((d) => {
+                    const complete = d.done >= d.total;
+                    return (
+                      <span
+                        key={d.difficulty}
+                        className="flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-900"
+                      >
+                        <span className={difficultyColorClass(d.difficulty)}>{d.difficulty}</span>
+                        <span className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
+                          {d.done}/{d.total}
+                        </span>
+                      </span>
+                    );
+                  })}
                 </div>
-              );
-            })}
+                {(tradeable > 0 || bound > 0) && (
+                  <div className="flex items-center justify-between border-t border-neutral-200 pt-1.5 dark:border-neutral-700">
+                    <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
+                    <span className="flex items-center gap-1">
+                      {tradeable > 0 && <span className="text-amber-600 dark:text-amber-400">{tradeable.toLocaleString()}G</span>}
+                      {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
+                      {bound > 0 && <span className="text-indigo-600 dark:text-indigo-400">{bound.toLocaleString()}G</span>}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
