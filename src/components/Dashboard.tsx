@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
 import CharacterReorderModal from "@/components/CharacterReorderModal";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 import { getClassIcon } from "@/lib/classIcons";
 import { isSupportEngraving } from "@/lib/engravings";
@@ -349,15 +350,26 @@ export default function Dashboard({
   }, [raids]);
 
   // 로그인한 사람 기준 "내 캐릭터 전체"에서 레이드 이름별로, 그 안의 난이도별 클리어한 캐릭터 수/전체 수와
-  // (골드 받기로 고른 것만) 그 레이드 이름 전체에서 받을 수 있는 골드 합계
+  // (골드 받기로 고른 것만) 그 레이드 이름에서 "아직 클리어 안 해서 앞으로 받을 수 있는" 골드 합계.
+  // 클리어한 것까지 합치면 체크를 해도 숫자가 그대로라 확인하는 의미가 없어서, 남은(미클리어) 것만 더한다.
   const myRaidStatusByName = useMemo(() => {
     type DifficultyStatus = { difficulty: string; sortOrder: number; done: number; total: number };
-    const map = new Map<string, { difficulties: Map<string, DifficultyStatus>; tradeable: number; bound: number }>();
+    type Entry = {
+      difficulties: Map<string, DifficultyStatus>;
+      tradeable: number;
+      bound: number;
+      // 골드 유무 표시(테두리 줄 노출 여부)는 "지금 남은 골드"가 아니라 "원래 골드가 나오는 레이드였는지"로
+      // 판단한다 — 남은 값 기준으로 하면 마지막 레이드를 체크하는 순간 0으로 바뀌면서 그 자리에서 바로
+      // 사라져버려 숫자가 0으로 줄어드는 애니메이션을 볼 새도 없이 통째로 없어져 보임.
+      everTradeable: number;
+      everBound: number;
+    };
+    const map = new Map<string, Entry>();
     for (const character of characters) {
       if (character.owner_id !== currentUserId) continue;
       const goldEarningIds = goldEarningRaidIdsFor(character);
       for (const raid of selectedRaidsFor(character)) {
-        const entry = map.get(raid.name) ?? { difficulties: new Map(), tradeable: 0, bound: 0 };
+        const entry = map.get(raid.name) ?? { difficulties: new Map(), tradeable: 0, bound: 0, everTradeable: 0, everBound: 0 };
         const diffEntry = entry.difficulties.get(raid.difficulty) ?? {
           difficulty: raid.difficulty,
           sortOrder: raid.sort_order,
@@ -365,13 +377,18 @@ export default function Dashboard({
           total: 0,
         };
         diffEntry.total++;
-        if (isRaidClearedAtAll(character.id, raid)) diffEntry.done++;
+        const cleared = isRaidClearedAtAll(character.id, raid);
+        if (cleared) diffEntry.done++;
         entry.difficulties.set(raid.difficulty, diffEntry);
 
         if (character.is_gold_earner && goldEarningIds.has(raid.id)) {
           const split = splitGold(raid);
-          entry.tradeable += split.tradeable;
-          entry.bound += split.bound;
+          entry.everTradeable += split.tradeable;
+          entry.everBound += split.bound;
+          if (!cleared) {
+            entry.tradeable += split.tradeable;
+            entry.bound += split.bound;
+          }
         }
         map.set(raid.name, entry);
       }
@@ -382,6 +399,8 @@ export default function Dashboard({
         difficulties: Array.from(v.difficulties.values()).sort((a, b) => a.sortOrder - b.sortOrder),
         tradeable: v.tradeable,
         bound: v.bound,
+        everTradeable: v.everTradeable,
+        everBound: v.everBound,
       }))
       .sort((a, b) => (raidNameOrder.get(a.raidName) ?? 0) - (raidNameOrder.get(b.raidName) ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -489,13 +508,15 @@ export default function Dashboard({
             <div key={stat.label} className="min-w-[170px]">
               <div className="mb-1 text-xs text-neutral-400 dark:text-neutral-400">{stat.label}</div>
               <div className="flex items-baseline gap-1 text-sm">
-                <span className={`font-semibold ${stat.textClass}`}>{stat.earned.toLocaleString()}</span>
-                <span className="text-neutral-400 dark:text-neutral-400">/ {stat.total.toLocaleString()}</span>
+                <AnimatedNumber value={stat.earned} className={`font-semibold ${stat.textClass}`} />
+                <span className="text-neutral-400 dark:text-neutral-400">
+                  / <AnimatedNumber value={stat.total} />
+                </span>
                 <span className={`ml-1 text-xs font-medium ${stat.textClass}`}>{pct}%</span>
               </div>
               <div className={`mt-1.5 h-1.5 w-full rounded-full ${stat.trackClass}`}>
                 <div
-                  className={`h-1.5 rounded-full ${stat.barClass}`}
+                  className={`h-1.5 rounded-full ${stat.barClass} transition-[width] duration-500 ease-out`}
                   style={{ width: `${Math.min(100, pct)}%` }}
                 />
               </div>
@@ -510,7 +531,7 @@ export default function Dashboard({
         <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
           <h2 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">내 레이드별 현황</h2>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {myRaidStatusByName.map(({ raidName, difficulties, tradeable, bound }) => (
+            {myRaidStatusByName.map(({ raidName, difficulties, tradeable, bound, everTradeable, everBound }) => (
               <div
                 key={raidName}
                 className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-800/50"
@@ -532,13 +553,17 @@ export default function Dashboard({
                     );
                   })}
                 </div>
-                {(tradeable > 0 || bound > 0) && (
+                {(everTradeable > 0 || everBound > 0) && (
                   <div className="flex items-center justify-between border-t border-neutral-200 pt-1.5 dark:border-neutral-700">
                     <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
                     <span className="flex items-center gap-1">
-                      {tradeable > 0 && <span className="text-amber-600 dark:text-amber-400">{tradeable.toLocaleString()}G</span>}
-                      {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
-                      {bound > 0 && <span className="text-indigo-600 dark:text-indigo-400">{bound.toLocaleString()}G</span>}
+                      {everTradeable > 0 && (
+                        <AnimatedNumber value={tradeable} format={(n) => `${n.toLocaleString()}G`} className="text-amber-600 dark:text-amber-400" />
+                      )}
+                      {everTradeable > 0 && everBound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
+                      {everBound > 0 && (
+                        <AnimatedNumber value={bound} format={(n) => `${n.toLocaleString()}G`} className="text-indigo-600 dark:text-indigo-400" />
+                      )}
                     </span>
                   </div>
                 )}
@@ -677,7 +702,7 @@ export default function Dashboard({
                               onClick={() => toggle(character, raid.id, 1)}
                               title={!eligible ? "아이템레벨 미달" : undefined}
                               className={[
-                                "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs",
+                                "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors duration-300 ease-out",
                                 cleared
                                   ? "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
                                   : "border-neutral-200 bg-white font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200",
@@ -685,10 +710,10 @@ export default function Dashboard({
                                 mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
                               ].join(" ")}
                             >
-                              <span className={["flex items-center gap-1.5", cleared ? "line-through" : ""].join(" ")}>
+                              <span className={["flex items-center gap-1.5 transition-colors duration-300 ease-out", cleared ? "line-through" : ""].join(" ")}>
                                 <span
                                   className={[
-                                    "flex h-4 w-4 items-center justify-center rounded border text-[10px]",
+                                    "flex h-4 w-4 items-center justify-center rounded border text-[10px] transition-colors duration-300 ease-out",
                                     cleared
                                       ? "border-neutral-300 bg-neutral-200 text-neutral-500 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
                                       : "border-neutral-300 dark:border-neutral-600",
@@ -709,15 +734,25 @@ export default function Dashboard({
                                 (() => {
                                   const { bound, tradeable } = splitGold(raid);
                                   return (
-                                    <span className={["flex items-center gap-1", cleared ? "line-through" : ""].join(" ")}>
+                                    <span className={["flex items-center gap-1 transition-colors duration-300 ease-out", cleared ? "line-through" : ""].join(" ")}>
                                       {tradeable > 0 && (
-                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-400" : "text-amber-600 dark:text-amber-400"}>
+                                        <span
+                                          className={[
+                                            "transition-colors duration-300 ease-out",
+                                            cleared ? "text-neutral-400 dark:text-neutral-400" : "text-amber-600 dark:text-amber-400",
+                                          ].join(" ")}
+                                        >
                                           {tradeable.toLocaleString()}G
                                         </span>
                                       )}
                                       {tradeable > 0 && bound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
                                       {bound > 0 && (
-                                        <span className={cleared ? "text-neutral-400 dark:text-neutral-400" : "text-indigo-600 dark:text-indigo-400"}>
+                                        <span
+                                          className={[
+                                            "transition-colors duration-300 ease-out",
+                                            cleared ? "text-neutral-400 dark:text-neutral-400" : "text-indigo-600 dark:text-indigo-400",
+                                          ].join(" ")}
+                                        >
                                           {bound.toLocaleString()}G
                                         </span>
                                       )}
@@ -735,9 +770,17 @@ export default function Dashboard({
                       <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs dark:border-neutral-800">
                         <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
                         <span className="flex items-center gap-1">
-                          <span className="text-amber-600 dark:text-amber-400">{remaining.tradeable.toLocaleString()}G</span>
+                          <AnimatedNumber
+                            value={remaining.tradeable}
+                            format={(n) => `${n.toLocaleString()}G`}
+                            className="text-amber-600 dark:text-amber-400"
+                          />
                           <span className="text-neutral-300 dark:text-neutral-500">/</span>
-                          <span className="text-indigo-600 dark:text-indigo-400">{remaining.bound.toLocaleString()}G</span>
+                          <AnimatedNumber
+                            value={remaining.bound}
+                            format={(n) => `${n.toLocaleString()}G`}
+                            className="text-indigo-600 dark:text-indigo-400"
+                          />
                         </span>
                       </div>
                     )}
