@@ -264,8 +264,16 @@ export default function StatusPanelScanner({
     try {
       await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
       upsertEntry(key, base, { status: "applied", raidId, errorMessage: undefined });
-    } catch (err) {
-      upsertEntry(key, base, { status: "failed", errorMessage: err instanceof Error ? err.message : undefined });
+    } catch {
+      // 아주 가끔 서버 액션 처리 중 일시적인 렌더링 오류(React #441)로 실패하는 경우가 있어서,
+      // 잠깐 쉬었다가 한 번 더 시도해본다 — 대부분 재시도하면 바로 성공함.
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
+        upsertEntry(key, base, { status: "applied", raidId, errorMessage: undefined });
+      } catch (err) {
+        upsertEntry(key, base, { status: "failed", errorMessage: err instanceof Error ? err.message : undefined });
+      }
     }
   }
 

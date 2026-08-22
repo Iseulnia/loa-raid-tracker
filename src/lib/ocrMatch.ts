@@ -57,6 +57,15 @@ function flattenLines(page: Tesseract.Page): OcrLine[] {
 
 export type RaidRowStatus = { raidLabel: string; cleared: boolean };
 
+// "레이드 참여 현황" 패널의 표기가 앱의 레이드 이름과 다른 경우가 있어서(예: 벨가르딘의 실제 화면 타이틀은
+// "죽음의 계율자, 벨가르딘"이 아니라 참여 현황 패널에서는 "페투스 안 크라그마"), OCR로 읽은 텍스트 안에서
+// 검색할 문자열을 따로 지정한다. 여기 없는 레이드는 앱 이름 그대로 찾아도 된다(예: 종막/4막/성당은 패널
+// 표기에 앱 이름이 그대로 포함돼 있음 — "종막 : 카제로스", "4막 : 아르모체", "지평의 성당").
+const PARTICIPATION_PANEL_SEARCH_TEXT: Record<string, string> = {
+  벨가르딘: "크라그마",
+  세르카: "코르부스",
+};
+
 /**
  * "레이드 참여 현황" 패널처럼 여러 줄이 한 화면에 같이 보이는 영역을 통째로 OCR로 읽어서, 등록해둔 레이드
  * 이름들이 몇 번째 줄에 있고 그 줄(또는 세로로 가까운 줄)에 "완료"가 같이 있는지로 클리어 여부를 판정한다.
@@ -82,9 +91,10 @@ export async function recognizeParticipationPanel(
 
   const results: RaidRowStatus[] = [];
   for (const raidLabel of raidLabels) {
-    const normLabel = normalize(raidLabel);
-    if (!normLabel) continue;
-    const nameLine = lines.find((l) => normalize(l.text).includes(normLabel));
+    const searchText = PARTICIPATION_PANEL_SEARCH_TEXT[raidLabel] ?? raidLabel;
+    const normSearch = normalize(searchText);
+    if (!normSearch) continue;
+    const nameLine = lines.find((l) => normalize(l.text).includes(normSearch));
     if (!nameLine) continue;
 
     const cleared = lines.some((l) => normalize(l.text).includes("완료") && Math.abs(l.y - nameLine.y) <= tolerance);
