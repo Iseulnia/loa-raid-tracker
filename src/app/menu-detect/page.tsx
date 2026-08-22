@@ -14,7 +14,7 @@ export default async function MenuDetectPage() {
     supabase
       .from("raid_clear_templates")
       .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at")
-      .in("template_type", ["status_row", "character_name"])
+      .in("template_type", ["status_row", "character_name", "participation_panel_ocr"])
       .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("character_raids").select("character_id, raid_id"),
@@ -27,14 +27,10 @@ export default async function MenuDetectPage() {
     })
   );
 
-  const statusRowTemplates = templatesWithUrls
-    .filter((t) => t.template_type === "status_row" && t.url && t.crop && t.badge_crop && t.raid_label)
-    .map((t) => ({ id: t.id, raidLabel: t.raid_label!, crop: t.crop!, badgeCrop: t.badge_crop!, url: t.url! }));
+  // 위치가 고정인 영역들은(패널 전체, 캐릭터 이름) 내가 등록한 것만 쓴다 — 다른 사람 화면 배치/해상도가
+  // 다를 수 있어서다 (raid_clear_templates는 RLS상 다른 사람 것도 보이는 테이블이라서).
+  const panelRegion = templatesWithUrls.find((t) => t.template_type === "participation_panel_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
 
-  // 캐릭터 이름 인식은 OCR이라 어떤 캐릭터든 그때그때 텍스트로 읽어서 매칭하므로, 저장된 크롭 위치(화면
-  // 좌표)만 있으면 되고 특정 캐릭터에 종속되지 않는다. 대신 이 좌표는 "내가 화면공유한 화면"에서 캡처한
-  // 것이라 다른 사람의 화면 배치/해상도와 다를 수 있으므로, 반드시 내가 등록한 것만 써야 한다
-  // (raid_clear_templates는 RLS상 모든 로그인 사용자에게 보이는 테이블이라 다른 사람 것도 섞여 들어올 수 있음).
   const characterNameRegions = templatesWithUrls
     .filter((t) => t.template_type === "character_name" && t.crop && t.created_by === user.id)
     .map((t) => ({ id: t.id, crop: t.crop! }));
@@ -56,17 +52,18 @@ export default async function MenuDetectPage() {
           characters={characters ?? []}
           raids={raids ?? []}
           characterRaids={characterRaids ?? []}
-          templates={statusRowTemplates}
+          panelRegion={panelRegion}
           characterNameRegions={characterNameRegions}
         />
       </section>
 
       <section>
-        <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">기준 이미지 관리</h2>
+        <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">기준 영역 등록</h2>
         <ul className="mb-4 list-disc space-y-1 pl-5 text-xs text-neutral-500 dark:text-neutral-400">
           <li>
-            <strong>레이드 참여현황 이름표</strong>: &ldquo;레이드 참여 현황&rdquo; 패널에서 레이드 이름 부분과 그
-            옆 &ldquo;참여 완료&rdquo; 배지 부분을 순서대로 선택 (레이드 이름별로 하나씩, 난이도 구분 없음)
+            <strong>레이드 참여현황 패널 인식 영역</strong>: &ldquo;레이드 참여 현황&rdquo; 패널에서 레이드 목록이
+            보이는 영역 전체를 넉넉하게 선택 (한 번만 등록하면 됨 — OCR로 그 안의 레이드명과 참여 완료 여부를
+            한꺼번에 읽어요)
           </li>
           <li>
             <strong>캐릭터 이름 인식 영역</strong>: 게임 메뉴 화면 좌측 하단에 고정으로 뜨는 캐릭터 이름 부분을
@@ -77,7 +74,7 @@ export default async function MenuDetectPage() {
           raids={raids ?? []}
           characters={characters ?? []}
           initialTemplates={templatesWithUrls}
-          allowedTypes={["status_row", "character_name"]}
+          allowedTypes={["participation_panel_ocr", "character_name"]}
         />
       </section>
     </main>

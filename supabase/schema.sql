@@ -109,7 +109,10 @@ create table if not exists public.raid_clear_templates (
   -- 특정 레이드에 종속되지 않아 raid_id가 비어있을 수 있음. 'result_screen'(결과화면의 레이드명/난이도)만 필수.
   raid_id uuid references public.raids (id) on delete cascade,
   template_type text not null default 'result_screen'
-    check (template_type in ('clear_banner', 'result_screen', 'gate_checkmark', 'status_row', 'character_name', 'result_screen_ocr')),
+    check (template_type in (
+      'clear_banner', 'result_screen', 'gate_checkmark', 'status_row', 'character_name',
+      'result_screen_ocr', 'participation_panel_ocr'
+    )),
   crop jsonb, -- 캡처한 원본 프레임 대비 상대 위치 {xPct,yPct,wPct,hPct} (0~1)
   raid_label text, -- 'status_row' 전용: 난이도 무관 레이드 이름 (예: "벨가르딘"), raid_id 대신 이걸로 매칭
   badge_crop jsonb, -- 'status_row' 전용: "참여 완료" 배지의 상대 위치

@@ -2,27 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { findBestRowMatch, sampleBadgeRegion, sampleNameTemplate, greenFraction, type CropPct } from "@/lib/rowScan";
-import { recognizeRegionText, matchCharacterName } from "@/lib/ocrMatch";
+import { recognizeRegionText, recognizeParticipationPanel, matchCharacterName, type CropPct } from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string };
 type CharacterRaidRow = { character_id: string; raid_id: string };
-type StatusRowTemplate = { id: string; raidLabel: string; crop: CropPct; badgeCrop: CropPct; url: string };
 /** 캐릭터 이름이 뜨는 화면 영역 하나(누구 이름이든 그때그때 OCR로 읽어서 매칭하므로 캐릭터별로 여러 개 필요 없음). */
 type CharacterNameRegion = { id: string; crop: CropPct };
 
-// 결과화면 매칭(88%)보다는 관대하게 — 이름표 텍스트 자체가 작고, 목록 스크롤 중이라 프레임이 살짝
-// 흔들릴 수 있어서 너무 빡빡하면 아예 못 찾을 수 있음. 실사용하며 조정 필요할 수 있음.
-const NAME_MATCH_THRESHOLD = 0.85;
-const BADGE_GREEN_THRESHOLD = 0.12;
-const SCAN_INTERVAL_MS = 900;
+const PANEL_SCAN_INTERVAL_MS = 2000; // 패널 전체를 OCR로 읽는 주기 (여러 줄을 한 번에 읽어서 이름표별 스캔보다 느림)
 // 캐릭터 전환(게임에서 다른 캐릭터로 접속)을 스캔 중간에도 잡아내기 위해 주기적으로 다시 OCR을 돈다.
-// 너무 자주 돌리면 낭비라 결과화면 스캔보다는 훨씬 느린 주기로.
-const OCR_RECHECK_INTERVAL_MS = 4000;
+const CHARACTER_RECHECK_INTERVAL_MS = 2500;
 
-// "seen"은 레이드 이름은 인식했지만 아직 참여 완료 배지가 아닌 상태(= 스캔이 그 행을 제대로 보고는
-// 있다는 증거). "applied"로 넘어가야 실제로 클리어로 체크된 것.
+// "seen"은 레이드 이름은 인식했지만 아직 참여 완료가 아닌 상태(= 스캔이 그 행을 제대로 보고는 있다는 증거).
+// "applied"로 넘어가야 실제로 클리어로 체크된 것.
 type FoundStatus = "seen" | "checking" | "applied" | "not-in-homework" | "failed" | "undone";
 type FoundEntry = {
   key: string; // `${characterId}:${raidLabel}` — 캐릭터를 전환해도 서로 안 겹치게
@@ -49,24 +42,22 @@ export default function StatusPanelScanner({
   characters,
   raids,
   characterRaids,
-  templates,
+  panelRegion,
   characterNameRegions,
 }: {
   characters: CharacterOption[];
   raids: RaidOption[];
   characterRaids: CharacterRaidRow[];
-  templates: StatusRowTemplate[];
+  /** "레이드 참여 현황" 패널 전체가 보이는 영역 (한 번만 등록, 없으면 스캔 자체를 못 함). */
+  panelRegion: CropPct | null;
   characterNameRegions: CharacterNameRegion[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const nameSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const ocrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const ocrBusyRef = useRef(false);
+  const characterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ocrBusyRef = useRef(false); // 패널 스캔과 캐릭터 인식이 같은 tesseract 워커를 공유해서 겹치지 않게 함
   const foundKeysRef = useRef<Set<string>>(new Set());
   const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
   const selectedCharacterIdRef = useRef("");
@@ -83,21 +74,12 @@ export default function StatusPanelScanner({
   const [found, setFound] = useState<FoundEntry[]>([]);
 
   const charactersById = useMemo(() => new Map(characters.map((c) => [c.id, c])), [characters]);
-
-  useEffect(() => {
-    for (const t of templates) {
-      if (imagesRef.current.has(t.id)) continue;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = t.url;
-      imagesRef.current.set(t.id, img);
-    }
-  }, [templates]);
+  const distinctRaidLabels = useMemo(() => Array.from(new Set(raids.map((r) => r.name))), [raids]);
 
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (ocrIntervalRef.current) clearInterval(ocrIntervalRef.current);
+      if (characterIntervalRef.current) clearInterval(characterIntervalRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -126,26 +108,25 @@ export default function StatusPanelScanner({
   async function attemptCharacterOcr() {
     const region = characterNameRegions[0];
     const video = videoRef.current;
-    const ocrCanvas = ocrCanvasRef.current;
-    if (!region || !video || !ocrCanvas || ocrBusyRef.current || characterLockedRef.current) return;
+    if (!region || !video || ocrBusyRef.current || characterLockedRef.current) return;
     if (video.videoWidth === 0) return;
 
     ocrBusyRef.current = true;
     setOcrStatus("recognizing");
     try {
-      ocrCanvas.width = video.videoWidth;
-      ocrCanvas.height = video.videoHeight;
-      const ctx = ocrCanvas.getContext("2d");
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(video, 0, 0, ocrCanvas.width, ocrCanvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const text = await recognizeRegionText(ocrCanvas, ocrCanvas.width, ocrCanvas.height, region.crop);
+      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, region.crop);
       const matched = matchCharacterName(text, characters);
 
       if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
 
       if (matched) {
-        // 이미 같은 캐릭터로 인식돼 있으면 상태만 갱신하고 재선택은 스킵(불필요한 리렌더 방지)
         if (matched.id !== selectedCharacterIdRef.current) {
           selectedCharacterIdRef.current = matched.id;
           setSelectedCharacterId(matched.id);
@@ -185,11 +166,10 @@ export default function StatusPanelScanner({
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
-      intervalRef.current = setInterval(runScanTick, SCAN_INTERVAL_MS);
+      intervalRef.current = setInterval(() => void runPanelScan(), PANEL_SCAN_INTERVAL_MS);
       if (characterNameRegions.length > 0) {
-        // 시작 직후 한 번 바로 시도하고, 그 뒤로는 주기적으로 다시 시도해서 캐릭터 전환도 따라감
         void attemptCharacterOcr();
-        ocrIntervalRef.current = setInterval(() => void attemptCharacterOcr(), OCR_RECHECK_INTERVAL_MS);
+        characterIntervalRef.current = setInterval(() => void attemptCharacterOcr(), CHARACTER_RECHECK_INTERVAL_MS);
       }
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
@@ -201,9 +181,9 @@ export default function StatusPanelScanner({
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (ocrIntervalRef.current) {
-      clearInterval(ocrIntervalRef.current);
-      ocrIntervalRef.current = null;
+    if (characterIntervalRef.current) {
+      clearInterval(characterIntervalRef.current);
+      characterIntervalRef.current = null;
     }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -211,53 +191,41 @@ export default function StatusPanelScanner({
     setScanning(false);
   }
 
-  function runScanTick() {
+  async function runPanelScan() {
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.videoWidth === 0) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const canvasEl = canvasRef.current;
+    if (!video || !canvasEl || video.videoWidth === 0 || !panelRegion || ocrBusyRef.current) return;
 
     const characterId = selectedCharacterIdRef.current;
     if (!characterId) return;
     const characterName = charactersById.get(characterId)?.name ?? "";
 
-    for (const t of templates) {
-      const key = `${characterId}:${t.raidLabel}`;
-      if (foundKeysRef.current.has(key)) continue; // 이 캐릭터의 이 레이드는 이미 처리 끝남
+    ocrBusyRef.current = true;
+    try {
+      canvasEl.width = video.videoWidth;
+      canvasEl.height = video.videoHeight;
+      const ctx = canvasEl.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
 
-      const img = imagesRef.current.get(t.id);
-      if (!img || !img.complete || img.naturalWidth === 0) continue;
+      const rows = await recognizeParticipationPanel(canvasEl, canvasEl.width, canvasEl.height, panelRegion, distinctRaidLabels);
 
-      try {
-        let nameTemplate = nameSampleCacheRef.current.get(t.id);
-        if (!nameTemplate) {
-          nameTemplate = sampleNameTemplate(img, t.crop);
-          nameSampleCacheRef.current.set(t.id, nameTemplate);
-        }
+      for (const row of rows) {
+        const key = `${characterId}:${row.raidLabel}`;
+        if (foundKeysRef.current.has(key)) continue; // 이 캐릭터의 이 레이드는 이미 처리 끝남
 
-        const result = findBestRowMatch(canvas, canvas.width, canvas.height, nameTemplate, t.crop);
-        if (!result || result.score < NAME_MATCH_THRESHOLD) continue; // 이번 프레임엔 이 행이 안 보임(스크롤로 화면 밖)
-
-        const deltaYPct = result.yPct - t.crop.yPct;
-        const badgeCropNow: CropPct = { ...t.badgeCrop, yPct: t.badgeCrop.yPct + deltaYPct };
-        const badgeSample = sampleBadgeRegion(canvas, canvas.width, canvas.height, badgeCropNow);
-        const cleared = greenFraction(badgeSample) >= BADGE_GREEN_THRESHOLD;
-
-        if (!cleared) {
-          markSeen(characterId, characterName, t.raidLabel);
+        if (!row.cleared) {
+          markSeen(characterId, characterName, row.raidLabel);
           continue;
         }
 
         foundKeysRef.current.add(key);
-        applyFound(characterId, characterName, t.raidLabel);
-      } catch {
-        // 이미지 로딩/캔버스 문제로 한 템플릿이 실패해도 나머지는 계속 시도
-        continue;
+        applyFound(characterId, characterName, row.raidLabel);
       }
+    } catch {
+      // 이번 틱은 실패해도 다음 틱에 다시 시도
+    } finally {
+      ocrBusyRef.current = false;
     }
   }
 
@@ -275,7 +243,7 @@ export default function StatusPanelScanner({
     });
   }
 
-  /** 이름은 인식됐지만 아직 클리어(참여 완료 배지)는 아닌 상태를 목록에 표시/갱신한다. */
+  /** 이름은 인식됐지만 아직 클리어(참여 완료)는 아닌 상태를 목록에 표시/갱신한다. */
   function markSeen(characterId: string, characterName: string, raidLabel: string) {
     const key = `${characterId}:${raidLabel}`;
     setFound((prev) => {
@@ -301,9 +269,8 @@ export default function StatusPanelScanner({
     }
   }
 
-  /** 오탐으로 체크됐을 때 되돌리기. 실제 게임 화면의 배지는 그대로 "참여 완료"로 남아있으므로, 되돌린 뒤
-   *  같은 스캔 세션 동안은 foundKeysRef에 그대로 남겨둬서 곧바로 다시 자동 체크되지 않게 한다
-   *  (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). */
+  /** 오탐으로 체크됐을 때 되돌리기. 같은 스캔 세션 동안은 foundKeysRef에 그대로 남겨둬서 곧바로 다시 자동
+   *  체크되지 않게 한다 (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). */
   async function undoFound(entry: FoundEntry) {
     if (!entry.raidId) return;
     try {
@@ -349,7 +316,7 @@ export default function StatusPanelScanner({
           <button
             type="button"
             onClick={startScan}
-            disabled={characters.length === 0 || templates.length === 0}
+            disabled={characters.length === 0 || !panelRegion}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
           >
             스캔 시작
@@ -369,9 +336,9 @@ export default function StatusPanelScanner({
         </span>
       </div>
 
-      {templates.length === 0 && (
+      {!panelRegion && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
-          아직 등록된 &ldquo;레이드 참여현황 이름표&rdquo; 기준 이미지가 없어요. 아래에서 먼저 추가해주세요.
+          아직 &ldquo;레이드 참여현황 패널 인식 영역&rdquo;이 등록되지 않았어요. 아래에서 먼저 추가해주세요.
         </p>
       )}
       {characterNameRegions.length === 0 && (
@@ -389,7 +356,6 @@ export default function StatusPanelScanner({
         className={["w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800", scanning ? "" : "hidden"].join(" ")}
       />
       <canvas ref={canvasRef} className="hidden" />
-      <canvas ref={ocrCanvasRef} className="hidden" />
 
       {found.length > 0 && (
         <div className="mt-4 border-t border-neutral-100 pt-3 dark:border-neutral-800">
@@ -409,9 +375,7 @@ export default function StatusPanelScanner({
                         : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
                 ].join(" ")}
               >
-                <span>
-                  {f.characterName ? `${f.characterName} · ${f.raidLabel}` : f.raidLabel}
-                </span>
+                <span>{f.characterName ? `${f.characterName} · ${f.raidLabel}` : f.raidLabel}</span>
                 <span className="flex items-center gap-2">
                   {f.errorMessage ? `${STATUS_LABEL[f.status]}: ${f.errorMessage}` : STATUS_LABEL[f.status]}
                   {f.status === "applied" && (

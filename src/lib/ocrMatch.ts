@@ -40,6 +40,59 @@ export async function recognizeRegionText(
   return data.text.trim();
 }
 
+type OcrLine = { text: string; y: number };
+
+/** blocks/paragraphs/lines 트리를 평평한 줄 목록으로 펼친다(줄마다 세로 중심 좌표 포함). */
+function flattenLines(page: Tesseract.Page): OcrLine[] {
+  const lines: OcrLine[] = [];
+  for (const block of page.blocks ?? []) {
+    for (const para of block.paragraphs ?? []) {
+      for (const line of para.lines ?? []) {
+        lines.push({ text: line.text, y: (line.bbox.y0 + line.bbox.y1) / 2 });
+      }
+    }
+  }
+  return lines;
+}
+
+export type RaidRowStatus = { raidLabel: string; cleared: boolean };
+
+/**
+ * "레이드 참여 현황" 패널처럼 여러 줄이 한 화면에 같이 보이는 영역을 통째로 OCR로 읽어서, 등록해둔 레이드
+ * 이름들이 몇 번째 줄에 있고 그 줄(또는 세로로 가까운 줄)에 "완료"가 같이 있는지로 클리어 여부를 판정한다.
+ * 레이드 이름 줄과 완료 표시가 tesseract가 같은 줄로 묶을 수도, 아이콘 때문에 다른 줄로 쪼갤 수도 있어서
+ * 텍스트 일치가 아니라 세로 위치가 가까운지로 상관관계를 본다 — 어느 쪽이든 결과가 맞게 나온다.
+ */
+export async function recognizeParticipationPanel(
+  source: CanvasImageSource,
+  sourceW: number,
+  sourceH: number,
+  crop: CropPct,
+  raidLabels: string[]
+): Promise<RaidRowStatus[]> {
+  const worker = await getWorker();
+  const canvas = cropRegionForOcr(source, sourceW, sourceH, crop);
+  const { data } = await worker.recognize(canvas, {}, { blocks: true });
+  const lines = flattenLines(data);
+  if (lines.length === 0) return [];
+
+  // 한 행의 세로 폭을 대략 추정 — 최대 10행 정도 보인다고 가정 (탐색 여유를 위해 넉넉하게 잡음).
+  const rowHeightEstimate = canvas.height / 10;
+  const tolerance = rowHeightEstimate * 0.7;
+
+  const results: RaidRowStatus[] = [];
+  for (const raidLabel of raidLabels) {
+    const normLabel = normalize(raidLabel);
+    if (!normLabel) continue;
+    const nameLine = lines.find((l) => normalize(l.text).includes(normLabel));
+    if (!nameLine) continue;
+
+    const cleared = lines.some((l) => normalize(l.text).includes("완료") && Math.abs(l.y - nameLine.y) <= tolerance);
+    results.push({ raidLabel, cleared });
+  }
+  return results;
+}
+
 function normalize(s: string): string {
   return s.replace(/[^가-힣a-zA-Z0-9]/g, "");
 }

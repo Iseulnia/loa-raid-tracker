@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,18 +25,10 @@ const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
   clear_banner: "던전 클리어 배너",
   result_screen: "레이드 결과화면(레이드명)",
   gate_checkmark: "관문 체크마크",
-  status_row: "레이드 참여현황 이름표(스크롤 목록)",
+  status_row: "레이드 참여현황 이름표(스크롤 목록, 예전 방식)",
   character_name: "캐릭터 이름 인식 영역(OCR, 메뉴 화면 고정 위치)",
   result_screen_ocr: "레이드 결과화면 텍스트 인식 영역(OCR, 고정 위치)",
-};
-
-// 게임 내 "레이드 참여 현황" 패널의 표기가 앱의 레이드 이름과 달라서, 고를 때 헷갈리지 않도록 힌트로 보여준다.
-const GAME_PANEL_ALIASES: Record<string, string> = {
-  벨가르딘: "페투스 안 크라그마",
-  세르카: "코르부스 툴 라크",
-  성당: "지평의 성당",
-  종막: "종막 : 카제로스",
-  "4막": "4막 : 아르모체",
+  participation_panel_ocr: "레이드 참여현황 패널 인식 영역(OCR, 스크롤 목록 전체)",
 };
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -65,23 +57,6 @@ export default function ScreenCapture({
   const [frozen, setFrozen] = useState(false);
   const [selection, setSelection] = useState<Rect | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-
-  // status_row 타입 전용: 이름표 영역을 먼저 선택하고, 그다음 배지 영역을 선택하는 2단계 캡처.
-  const [captureStage, setCaptureStage] = useState<"name" | "badge">("name");
-  const [savedNameSelection, setSavedNameSelection] = useState<Rect | null>(null);
-
-  const distinctRaidNames = useMemo(() => {
-    const seen = new Set<string>();
-    const names: string[] = [];
-    for (const r of raids) {
-      if (!seen.has(r.name)) {
-        seen.add(r.name);
-        names.push(r.name);
-      }
-    }
-    return names;
-  }, [raids]);
-  const [selectedRaidLabel, setSelectedRaidLabel] = useState(distinctRaidNames[0] ?? "");
 
   const [templateType, setTemplateType] = useState<TemplateType>(allowedTypes[0] ?? "clear_banner");
   const [selectedRaidId, setSelectedRaidId] = useState(raids[0]?.id ?? "");
@@ -125,8 +100,6 @@ export default function ScreenCapture({
     setSharing(false);
     setFrozen(false);
     setSelection(null);
-    setSavedNameSelection(null);
-    setCaptureStage("name");
   }
 
   function captureFrame() {
@@ -140,27 +113,11 @@ export default function ScreenCapture({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     setFrozen(true);
     setSelection(null);
-    setSavedNameSelection(null);
-    setCaptureStage("name");
   }
 
   function retake() {
     setFrozen(false);
     setSelection(null);
-    setSavedNameSelection(null);
-    setCaptureStage("name");
-  }
-
-  /** status_row 전용: 이름표 영역 선택을 확정하고 배지 영역 선택 단계로 넘어간다. */
-  function confirmNameBox() {
-    if (!selection || selection.w < 4 || selection.h < 4) {
-      setError("먼저 레이드 이름 부분을 드래그로 선택해주세요.");
-      return;
-    }
-    setError("");
-    setSavedNameSelection(selection);
-    setSelection(null);
-    setCaptureStage("badge");
   }
 
   function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -199,94 +156,6 @@ export default function ScreenCapture({
   async function saveSelection() {
     const canvas = frozenCanvasRef.current;
     if (!canvas) return;
-
-    if (templateType === "status_row") {
-      if (!savedNameSelection) {
-        setError("먼저 레이드 이름 부분을 선택해주세요.");
-        return;
-      }
-      if (!selection || selection.w < 4 || selection.h < 4) {
-        setError("이제 '참여 완료' 배지 부분을 드래그로 선택해주세요.");
-        return;
-      }
-      if (!selectedRaidLabel) {
-        setError("어떤 레이드의 이름표인지 선택해주세요.");
-        return;
-      }
-
-      setSaving(true);
-      setError("");
-      try {
-        const nameSel = savedNameSelection;
-        const cropCanvas = document.createElement("canvas");
-        cropCanvas.width = nameSel.w;
-        cropCanvas.height = nameSel.h;
-        const ctx = cropCanvas.getContext("2d");
-        if (!ctx) throw new Error("캡처에 실패했어요.");
-        ctx.drawImage(canvas, nameSel.x, nameSel.y, nameSel.w, nameSel.h, 0, 0, nameSel.w, nameSel.h);
-
-        const blob = await new Promise<Blob | null>((resolve) => cropCanvas.toBlob(resolve, "image/png"));
-        if (!blob) throw new Error("이미지 캡처에 실패했어요.");
-
-        const crop: CropPct = {
-          xPct: nameSel.x / canvas.width,
-          yPct: nameSel.y / canvas.height,
-          wPct: nameSel.w / canvas.width,
-          hPct: nameSel.h / canvas.height,
-        };
-        const badgeCrop: CropPct = {
-          xPct: selection.x / canvas.width,
-          yPct: selection.y / canvas.height,
-          wPct: selection.w / canvas.width,
-          hPct: selection.h / canvas.height,
-        };
-
-        const supabase = createClient();
-        // 경로에 한글(레이드 이름)을 넣으면 Supabase Storage 키 검증에서 거부돼서(Invalid key),
-        // 파일 경로는 ASCII만 쓰고 실제 레이드 이름은 DB의 raid_label 컬럼에만 저장한다.
-        const path = `status_row/shared/${Date.now()}.png`;
-        const { error: uploadError } = await supabase.storage
-          .from("raid-clear-templates")
-          .upload(path, blob, { contentType: "image/png" });
-        if (uploadError) throw uploadError;
-
-        await saveRaidClearTemplate({
-          raidId: null,
-          templateType,
-          crop,
-          storagePath: path,
-          raidLabel: selectedRaidLabel,
-          badgeCrop,
-        });
-
-        setTemplates((prev) => [
-          {
-            id: `temp-${Date.now()}`,
-            raid_id: null,
-            template_type: templateType,
-            crop,
-            raid_label: selectedRaidLabel,
-            badge_crop: badgeCrop,
-            character_id: null,
-            storage_path: path,
-            created_at: new Date().toISOString(),
-            url: URL.createObjectURL(blob),
-          },
-          ...prev,
-        ]);
-
-        setFrozen(false);
-        setSelection(null);
-        setSavedNameSelection(null);
-        setCaptureStage("name");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "저장 중 오류가 발생했어요.");
-      } finally {
-        setSaving(false);
-        router.refresh(); // handleDelete와 같은 이유로, 저장 후에도 한 번 더 표준 리프레시로 동기화
-      }
-      return;
-    }
 
     if (!selection || selection.w < 4 || selection.h < 4) {
       setError("저장할 영역을 드래그로 먼저 선택해주세요.");
@@ -349,6 +218,7 @@ export default function ScreenCapture({
       setError(err instanceof Error ? err.message : "저장 중 오류가 발생했어요.");
     } finally {
       setSaving(false);
+      router.refresh(); // 서버 액션의 자동 재렌더가 가끔 꼬이는 걸 대비해 표준 리프레시로 한 번 더 동기화
     }
   }
 
@@ -359,8 +229,6 @@ export default function ScreenCapture({
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제 중 오류가 발생했어요.");
     } finally {
-      // 서버 액션의 revalidatePath가 자체적으로 다시 그리는 과정에서 가끔 렌더링이 꼬일 때가 있어서,
-      // 성공/실패와 상관없이 표준 클라이언트 리프레시로 한 번 더 동기화해준다 (수동 새로고침 없이도 복구됨).
       router.refresh();
     }
   }
@@ -430,17 +298,6 @@ export default function ScreenCapture({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
           />
-          {templateType === "status_row" && savedNameSelection && frozenCanvasRef.current && (
-            <div
-              className="pointer-events-none absolute border-2 border-sky-400 bg-sky-400/20"
-              style={{
-                left: `${(savedNameSelection.x / frozenCanvasRef.current.width) * 100}%`,
-                top: `${(savedNameSelection.y / frozenCanvasRef.current.height) * 100}%`,
-                width: `${(savedNameSelection.w / frozenCanvasRef.current.width) * 100}%`,
-                height: `${(savedNameSelection.h / frozenCanvasRef.current.height) * 100}%`,
-              }}
-            />
-          )}
           {selection && frozenCanvasRef.current && (
             <div
               className="pointer-events-none absolute border-2 border-emerald-400 bg-emerald-400/20"
@@ -457,14 +314,12 @@ export default function ScreenCapture({
         {frozen && (
           <div className="mt-3 flex flex-col gap-3">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {templateType === "status_row"
-                ? captureStage === "name"
-                  ? "① 먼저 레이드 이름 텍스트 부분만 드래그로 선택하세요 (예: '페투스 안 크라그마')."
-                  : "② 이제 그 옆에 있는 '참여 완료' 배지(초록 체크) 부분을 드래그로 선택하세요."
-                : templateType === "character_name"
-                  ? "게임 메뉴 화면 좌측 하단의 캐릭터 이름(레벨 포함해도 무방) 부분만 드래그로 선택하세요. 한 번만 등록하면 어떤 캐릭터든 OCR로 자동 인식돼요."
-                  : templateType === "result_screen_ocr"
-                    ? "레이드 결과화면에서 레이드명과 난이도가 함께 보이는 텍스트 부분만 드래그로 선택하세요 (예: '종막 : 최후의 날 [하드]'). 한 번만 등록하면 모든 레이드에 재사용돼요."
+              {templateType === "character_name"
+                ? "게임 메뉴 화면 좌측 하단의 캐릭터 이름(레벨 포함해도 무방) 부분만 드래그로 선택하세요. 한 번만 등록하면 어떤 캐릭터든 OCR로 자동 인식돼요."
+                : templateType === "result_screen_ocr"
+                  ? "레이드 결과화면에서 레이드명과 난이도가 함께 보이는 텍스트 부분만 드래그로 선택하세요 (예: '종막 : 최후의 날 [하드]'). 한 번만 등록하면 모든 레이드에 재사용돼요."
+                  : templateType === "participation_panel_ocr"
+                    ? "'레이드 참여 현황' 패널에서 레이드 목록이 보이는 영역 전체를 넉넉하게 드래그로 선택하세요. 한 번만 등록하면 모든 레이드에 재사용돼요."
                     : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
             </p>
 
@@ -474,8 +329,6 @@ export default function ScreenCapture({
                 onChange={(e) => {
                   setTemplateType(e.target.value as TemplateType);
                   setSelection(null);
-                  setSavedNameSelection(null);
-                  setCaptureStage("name");
                 }}
                 className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
               >
@@ -500,21 +353,6 @@ export default function ScreenCapture({
                 </select>
               )}
 
-              {templateType === "status_row" && (
-                <select
-                  value={selectedRaidLabel}
-                  onChange={(e) => setSelectedRaidLabel(e.target.value)}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                >
-                  {distinctRaidNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                      {GAME_PANEL_ALIASES[name] ? ` (게임 내: ${GAME_PANEL_ALIASES[name]})` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-
               <button
                 type="button"
                 onClick={retake}
@@ -523,24 +361,14 @@ export default function ScreenCapture({
                 다시 캡처
               </button>
 
-              {templateType === "status_row" && captureStage === "name" ? (
-                <button
-                  type="button"
-                  onClick={confirmNameBox}
-                  className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white"
-                >
-                  다음: 배지 위치 선택
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={saveSelection}
-                  disabled={saving}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-                >
-                  {saving ? "저장 중..." : "선택 영역 저장"}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={saveSelection}
+                disabled={saving}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {saving ? "저장 중..." : "선택 영역 저장"}
+              </button>
             </div>
           </div>
         )}
