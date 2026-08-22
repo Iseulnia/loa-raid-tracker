@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
@@ -51,6 +51,16 @@ function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
 }
 
+// 체크를 빠르게 두 번(체크→해제) 누르면 서버로 나가는 두 요청이 순서 보장 없이 따로 날아가서, 네트워크
+// 타이밍에 따라 "해제" 요청이 "체크" 요청보다 먼저 서버에 도착해버릴 수 있었다 — 그러면 최종 DB 상태는
+// 체크된 채로 남고, 뒤늦게 도착한 Realtime INSERT 이벤트 때문에 화면에서 체크가 잠깐 사라졌다가 다시
+// 나타나는 것처럼 보임. (character,raid,gate) 키별로 이전 요청이 끝난 뒤에만 다음 요청을 보내도록 체인을
+// 걸어서 항상 사용자가 누른 순서대로 서버에 도착하게 한다. 컴포넌트 인스턴스와 무관하게 요청 자체의 순서만
+// 보장하면 되는 값이라 useRef 대신 모듈 스코프에 둔다(렌더와 무관한 값이라 ref 규칙에도 안 걸림).
+const pendingCheckChains = new Map<string, Promise<void>>();
+// 실패 시 되돌릴지 판단할 때, 그 사이 사용자가 다시 토글해서 더 최신 의도가 생겼으면 되돌리면 안 되므로 기억해둔다.
+const desiredCheckStates = new Map<string, boolean>();
+
 export default function Dashboard({
   mode,
   currentUserId,
@@ -87,7 +97,6 @@ export default function Dashboard({
   const [editingCharacter, setEditingCharacter] = useState<CharacterRow | null>(null);
   const [reordering, setReordering] = useState(false);
   const [collapsedProfiles, setCollapsedProfiles] = useState<Set<string>>(new Set());
-  const [, startTransition] = useTransition();
   const [combatPowerBusy, setCombatPowerBusy] = useState<"refresh" | "reset" | null>(null);
   const router = useRouter();
 
@@ -252,6 +261,8 @@ export default function Dashboard({
     const key = checkKey(character.id, raidId, gate);
     const nextChecked = !checkedSet.has(key);
 
+    desiredCheckStates.set(key, nextChecked);
+
     setCheckedSet((prev) => {
       const next = new Set(prev);
       if (nextChecked) next.add(key);
@@ -259,16 +270,22 @@ export default function Dashboard({
       return next;
     });
 
-    startTransition(() => {
+    // 같은 키에 대한 이전 요청이 아직 안 끝났으면 그걸 기다렸다가 보낸다 — 그래야 체크→해제를 빠르게 눌러도
+    // 두 요청이 항상 누른 순서대로 서버에 도착한다.
+    const prevChain = pendingCheckChains.get(key) ?? Promise.resolve();
+    const chain = prevChain.then(() =>
       setRaidCheck({ characterId: character.id, raidId, gateNumber: gate, checked: nextChecked }).catch(() => {
+        // 이 요청이 실패한 사이 사용자가 또 토글해서 더 최신 의도가 생겼으면, 그 최신 의도를 덮어쓰면 안 되므로 되돌리지 않는다.
+        if (desiredCheckStates.get(key) !== nextChecked) return;
         setCheckedSet((prev) => {
           const next = new Set(prev);
           if (nextChecked) next.delete(key);
           else next.add(key);
           return next;
         });
-      });
-    });
+      })
+    );
+    pendingCheckChains.set(key, chain);
   }
 
   function selectedRaidsFor(character: CharacterRow): RaidRow[] {
