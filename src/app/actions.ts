@@ -106,17 +106,23 @@ export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
         fetchClassEngraving(character.name),
       ]);
       const shouldUpdate = fresh !== null && (character.combat_power === null || fresh > character.combat_power);
-      if (shouldUpdate) {
+      // class_engraving을 한 번도 기록한 적 없는 캐릭터는(마이그레이션 전에 등록됐던 경우 등),
+      // 전투력이 신기록이 아니어도 지금 값으로 최초 한 번은 채워준다 (그러지 않으면 영영 표시가 안 됨).
+      const shouldBackfillEngraving = character.class_engraving === null && freshEngraving !== null;
+      if (shouldUpdate || shouldBackfillEngraving) {
         const { error } = await supabase
           .from("characters")
-          .update({ combat_power: fresh, class_engraving: freshEngraving })
+          .update({
+            ...(shouldUpdate ? { combat_power: fresh } : {}),
+            class_engraving: freshEngraving,
+          })
           .eq("id", character.id);
         if (error) throw new Error(error.message);
       }
       return {
         characterId: character.id,
         combatPower: shouldUpdate ? fresh : character.combat_power,
-        classEngraving: shouldUpdate ? freshEngraving : character.class_engraving,
+        classEngraving: shouldUpdate || shouldBackfillEngraving ? freshEngraving : character.class_engraving,
       };
     })
   );
