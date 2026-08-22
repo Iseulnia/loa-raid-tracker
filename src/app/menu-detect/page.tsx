@@ -31,8 +31,14 @@ export default async function MenuDetectPage() {
     .filter((t) => t.template_type === "status_row" && t.url && t.crop && t.badge_crop && t.raid_label)
     .map((t) => ({ id: t.id, raidLabel: t.raid_label!, crop: t.crop!, badgeCrop: t.badge_crop!, url: t.url! }));
 
+  // raid_clear_templates는 RLS상 모든 로그인 사용자에게 보이므로(다른 친구가 등록한 것도 포함),
+  // 캐릭터 이름표는 반드시 "내 캐릭터"로만 한정해야 한다 — 안 그러면 다른 사람 캐릭터로 잘못 인식돼서
+  // setRaidCheck이 그 캐릭터 소유자가 아니라는 이유로(RLS) 계속 실패하는 문제가 생김.
+  const myCharacterIds = new Set((characters ?? []).map((c) => c.id));
   const characterNameTemplates = templatesWithUrls
-    .filter((t) => t.template_type === "character_name" && t.url && t.crop && t.character_id)
+    .filter(
+      (t) => t.template_type === "character_name" && t.url && t.crop && t.character_id && myCharacterIds.has(t.character_id)
+    )
     .map((t) => ({ id: t.id, characterId: t.character_id!, crop: t.crop!, url: t.url! }));
 
   return (

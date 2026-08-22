@@ -20,7 +20,7 @@ const CHARACTER_MATCH_THRESHOLD = 0.85;
 const SCAN_INTERVAL_MS = 900;
 
 type FoundStatus = "checking" | "applied" | "not-in-homework" | "failed";
-type FoundEntry = { raidLabel: string; status: FoundStatus };
+type FoundEntry = { raidLabel: string; status: FoundStatus; errorMessage?: string };
 
 const STATUS_LABEL: Record<FoundStatus, string> = {
   checking: "확인 중...",
@@ -106,6 +106,7 @@ export default function StatusPanelScanner({
   }, [raids, characterRaids]);
 
   function selectCharacterManually(characterId: string) {
+    selectedCharacterIdRef.current = characterId;
     setSelectedCharacterId(characterId);
     setAutoDetectedCharacterId(null);
     characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
@@ -171,6 +172,10 @@ export default function StatusPanelScanner({
     }
     if (best && best.score >= CHARACTER_MATCH_THRESHOLD) {
       characterLockedRef.current = true;
+      // ref를 여기서 바로 갱신한다 — setState는 다음 렌더에서야 useEffect로 반영되는데,
+      // 이 함수 직후 같은 tick 안에서 레이드 인식까지 이어지면 그 사이 ref가 아직 예전 값이라
+      // applyFound()가 엉뚱한(또는 소유하지 않은) 캐릭터로 체크를 시도해 실패하는 문제가 있었음.
+      selectedCharacterIdRef.current = best.characterId;
       setSelectedCharacterId(best.characterId);
       setAutoDetectedCharacterId(best.characterId);
     }
@@ -229,8 +234,9 @@ export default function StatusPanelScanner({
     try {
       await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
       setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "applied" } : f)));
-    } catch {
-      setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "failed" } : f)));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : undefined;
+      setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "failed", errorMessage } : f)));
     }
   }
 
@@ -316,7 +322,7 @@ export default function StatusPanelScanner({
                 ].join(" ")}
               >
                 <span>{f.raidLabel}</span>
-                <span>{STATUS_LABEL[f.status]}</span>
+                <span>{f.errorMessage ? `${STATUS_LABEL[f.status]}: ${f.errorMessage}` : STATUS_LABEL[f.status]}</span>
               </li>
             ))}
           </ul>
