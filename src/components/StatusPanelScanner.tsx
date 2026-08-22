@@ -18,14 +18,24 @@ const NAME_MATCH_THRESHOLD = 0.85;
 const BADGE_GREEN_THRESHOLD = 0.12;
 const SCAN_INTERVAL_MS = 900;
 
-type FoundStatus = "checking" | "applied" | "not-in-homework" | "failed";
-type FoundEntry = { raidLabel: string; status: FoundStatus; errorMessage?: string };
+// "seen"은 레이드 이름은 인식했지만 아직 참여 완료 배지가 아닌 상태(= 스캔이 그 행을 제대로 보고는
+// 있다는 증거). "applied"로 넘어가야 실제로 클리어로 체크된 것.
+type FoundStatus = "seen" | "checking" | "applied" | "not-in-homework" | "failed" | "undone";
+type FoundEntry = {
+  raidLabel: string;
+  status: FoundStatus;
+  errorMessage?: string;
+  raidId?: string;
+  characterId?: string;
+};
 
 const STATUS_LABEL: Record<FoundStatus, string> = {
+  seen: "클리어 X",
   checking: "확인 중...",
-  applied: "체크 완료",
-  "not-in-homework": "이 캐릭터 숙제에 없음",
+  applied: "클리어",
+  "not-in-homework": "클리어 (이 캐릭터 숙제에 없어 체크 안 됨)",
   failed: "체크 실패",
+  undone: "체크 취소됨",
 };
 
 type OcrStatus = "idle" | "recognizing" | "matched" | "no-match";
@@ -210,12 +220,17 @@ export default function StatusPanelScanner({
         }
 
         const result = findBestRowMatch(canvas, canvas.width, canvas.height, nameTemplate, t.crop);
-        if (!result || result.score < NAME_MATCH_THRESHOLD) continue;
+        if (!result || result.score < NAME_MATCH_THRESHOLD) continue; // 이번 프레임엔 이 행이 안 보임(스크롤로 화면 밖)
 
         const deltaYPct = result.yPct - t.crop.yPct;
         const badgeCropNow: CropPct = { ...t.badgeCrop, yPct: t.badgeCrop.yPct + deltaYPct };
         const badgeSample = sampleBadgeRegion(canvas, canvas.width, canvas.height, badgeCropNow);
-        if (greenFraction(badgeSample) < BADGE_GREEN_THRESHOLD) continue; // 아직 "참여 가능" 상태
+        const cleared = greenFraction(badgeSample) >= BADGE_GREEN_THRESHOLD;
+
+        if (!cleared) {
+          markSeen(t.raidLabel); // 이름은 찾았지만 아직 "참여 가능" 상태 — 스캔이 보고는 있다는 걸 보여줌
+          continue;
+        }
 
         foundLabelsRef.current.add(t.raidLabel);
         applyFound(t.raidLabel);
@@ -226,20 +241,48 @@ export default function StatusPanelScanner({
     }
   }
 
+  /** 이름은 인식됐지만 아직 클리어(참여 완료 배지)는 아닌 상태를 목록에 표시/갱신한다. */
+  function markSeen(raidLabel: string) {
+    setFound((prev) => {
+      if (prev.some((f) => f.raidLabel === raidLabel)) return prev; // 이미 목록에 있으면 그대로 둠 (checking/applied가 덮어씀)
+      return [...prev, { raidLabel, status: "seen" }];
+    });
+  }
+
+  function upsertFound(raidLabel: string, patch: Partial<FoundEntry>) {
+    setFound((prev) => {
+      if (!prev.some((f) => f.raidLabel === raidLabel)) return [...prev, { raidLabel, status: "checking", ...patch }];
+      return prev.map((f) => (f.raidLabel === raidLabel ? { ...f, ...patch } : f));
+    });
+  }
+
   async function applyFound(raidLabel: string) {
-    setFound((prev) => [...prev, { raidLabel, status: "checking" }]);
+    upsertFound(raidLabel, { status: "checking" });
     const characterId = selectedCharacterIdRef.current;
     const raidId = raidIdByCharacterAndName.get(characterId)?.get(raidLabel);
     if (!raidId) {
-      setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "not-in-homework" } : f)));
+      upsertFound(raidLabel, { status: "not-in-homework" });
       return;
     }
     try {
       await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
-      setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "applied" } : f)));
+      upsertFound(raidLabel, { status: "applied", raidId, characterId, errorMessage: undefined });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : undefined;
-      setFound((prev) => prev.map((f) => (f.raidLabel === raidLabel ? { ...f, status: "failed", errorMessage } : f)));
+      upsertFound(raidLabel, { status: "failed", errorMessage });
+    }
+  }
+
+  /** 오탐으로 체크됐을 때 되돌리기. 실제 게임 화면의 배지는 그대로 "참여 완료"로 남아있으므로, 되돌린 뒤
+   *  같은 스캔 세션 동안은 foundLabelsRef에 그대로 남겨둬서 곧바로 다시 자동 체크되지 않게 한다
+   *  (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). */
+  async function undoFound(entry: FoundEntry) {
+    if (!entry.raidId || !entry.characterId) return;
+    try {
+      await setRaidCheck({ characterId: entry.characterId, raidId: entry.raidId, gateNumber: 1, checked: false });
+      upsertFound(entry.raidLabel, { status: "undone" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "취소 중 오류가 발생했어요.");
     }
   }
 
@@ -326,13 +369,22 @@ export default function StatusPanelScanner({
                   "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs",
                   f.status === "applied"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"
-                    : f.status === "checking"
+                    : f.status === "checking" || f.status === "seen"
                       ? "border-neutral-200 bg-neutral-50 text-neutral-500 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
-                      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
+                      : f.status === "undone"
+                        ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
+                        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
                 ].join(" ")}
               >
                 <span>{f.raidLabel}</span>
-                <span>{f.errorMessage ? `${STATUS_LABEL[f.status]}: ${f.errorMessage}` : STATUS_LABEL[f.status]}</span>
+                <span className="flex items-center gap-2">
+                  {f.errorMessage ? `${STATUS_LABEL[f.status]}: ${f.errorMessage}` : STATUS_LABEL[f.status]}
+                  {f.status === "applied" && (
+                    <button type="button" onClick={() => undoFound(f)} className="text-red-500 hover:underline dark:text-red-400">
+                      취소
+                    </button>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
