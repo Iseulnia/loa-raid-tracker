@@ -17,16 +17,21 @@ type CharacterNameRegion = { id: string; crop: CropPct };
 const NAME_MATCH_THRESHOLD = 0.85;
 const BADGE_GREEN_THRESHOLD = 0.12;
 const SCAN_INTERVAL_MS = 900;
+// 캐릭터 전환(게임에서 다른 캐릭터로 접속)을 스캔 중간에도 잡아내기 위해 주기적으로 다시 OCR을 돈다.
+// 너무 자주 돌리면 낭비라 결과화면 스캔보다는 훨씬 느린 주기로.
+const OCR_RECHECK_INTERVAL_MS = 4000;
 
 // "seen"은 레이드 이름은 인식했지만 아직 참여 완료 배지가 아닌 상태(= 스캔이 그 행을 제대로 보고는
 // 있다는 증거). "applied"로 넘어가야 실제로 클리어로 체크된 것.
 type FoundStatus = "seen" | "checking" | "applied" | "not-in-homework" | "failed" | "undone";
 type FoundEntry = {
+  key: string; // `${characterId}:${raidLabel}` — 캐릭터를 전환해도 서로 안 겹치게
+  characterId: string;
+  characterName: string;
   raidLabel: string;
   status: FoundStatus;
   errorMessage?: string;
   raidId?: string;
-  characterId?: string;
 };
 
 const STATUS_LABEL: Record<FoundStatus, string> = {
@@ -60,8 +65,10 @@ export default function StatusPanelScanner({
   const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const nameSampleCacheRef = useRef<Map<string, ImageData>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const foundLabelsRef = useRef<Set<string>>(new Set());
-  const characterLockedRef = useRef(false);
+  const ocrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ocrBusyRef = useRef(false);
+  const foundKeysRef = useRef<Set<string>>(new Set());
+  const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
   const selectedCharacterIdRef = useRef("");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
@@ -74,6 +81,8 @@ export default function StatusPanelScanner({
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const [found, setFound] = useState<FoundEntry[]>([]);
+
+  const charactersById = useMemo(() => new Map(characters.map((c) => [c.id, c])), [characters]);
 
   useEffect(() => {
     for (const t of templates) {
@@ -88,6 +97,7 @@ export default function StatusPanelScanner({
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (ocrIntervalRef.current) clearInterval(ocrIntervalRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -117,18 +127,12 @@ export default function StatusPanelScanner({
     const region = characterNameRegions[0];
     const video = videoRef.current;
     const ocrCanvas = ocrCanvasRef.current;
-    if (!region || !video || !ocrCanvas) return;
+    if (!region || !video || !ocrCanvas || ocrBusyRef.current || characterLockedRef.current) return;
+    if (video.videoWidth === 0) return;
 
+    ocrBusyRef.current = true;
     setOcrStatus("recognizing");
     try {
-      // 화면공유 시작 직후엔 아직 비디오 프레임이 준비 안 됐을 수 있어서 살짝 기다린다.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      if (video.videoWidth === 0) await new Promise((resolve) => setTimeout(resolve, 800));
-      if (video.videoWidth === 0) {
-        setOcrStatus("no-match");
-        return;
-      }
-
       ocrCanvas.width = video.videoWidth;
       ocrCanvas.height = video.videoHeight;
       const ctx = ocrCanvas.getContext("2d");
@@ -138,12 +142,14 @@ export default function StatusPanelScanner({
       const text = await recognizeRegionText(ocrCanvas, ocrCanvas.width, ocrCanvas.height, region.crop);
       const matched = matchCharacterName(text, characters);
 
-      if (characterLockedRef.current) return; // OCR 처리 중 사용자가 이미 수동으로 캐릭터를 골랐으면 덮어쓰지 않음
+      if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
 
       if (matched) {
-        characterLockedRef.current = true;
-        selectedCharacterIdRef.current = matched.id;
-        setSelectedCharacterId(matched.id);
+        // 이미 같은 캐릭터로 인식돼 있으면 상태만 갱신하고 재선택은 스킵(불필요한 리렌더 방지)
+        if (matched.id !== selectedCharacterIdRef.current) {
+          selectedCharacterIdRef.current = matched.id;
+          setSelectedCharacterId(matched.id);
+        }
         setAutoDetectedCharacterId(matched.id);
         setOcrStatus("matched");
       } else {
@@ -151,6 +157,8 @@ export default function StatusPanelScanner({
       }
     } catch {
       setOcrStatus("no-match");
+    } finally {
+      ocrBusyRef.current = false;
     }
   }
 
@@ -171,15 +179,18 @@ export default function StatusPanelScanner({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      foundLabelsRef.current = new Set();
-      characterLockedRef.current = characterNameRegions.length === 0; // 등록된 인식 영역이 없으면 자동 인식 자체를 안 함
+      foundKeysRef.current = new Set();
       setAutoDetectedCharacterId(null);
       setOcrStatus("idle");
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
       intervalRef.current = setInterval(runScanTick, SCAN_INTERVAL_MS);
-      if (characterNameRegions.length > 0) void attemptCharacterOcr();
+      if (characterNameRegions.length > 0) {
+        // 시작 직후 한 번 바로 시도하고, 그 뒤로는 주기적으로 다시 시도해서 캐릭터 전환도 따라감
+        void attemptCharacterOcr();
+        ocrIntervalRef.current = setInterval(() => void attemptCharacterOcr(), OCR_RECHECK_INTERVAL_MS);
+      }
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
     }
@@ -189,6 +200,10 @@ export default function StatusPanelScanner({
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+    if (ocrIntervalRef.current) {
+      clearInterval(ocrIntervalRef.current);
+      ocrIntervalRef.current = null;
     }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -206,8 +221,13 @@ export default function StatusPanelScanner({
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    const characterId = selectedCharacterIdRef.current;
+    if (!characterId) return;
+    const characterName = charactersById.get(characterId)?.name ?? "";
+
     for (const t of templates) {
-      if (foundLabelsRef.current.has(t.raidLabel)) continue; // 이미 찾은 레이드는 다시 안 봄
+      const key = `${characterId}:${t.raidLabel}`;
+      if (foundKeysRef.current.has(key)) continue; // 이 캐릭터의 이 레이드는 이미 처리 끝남
 
       const img = imagesRef.current.get(t.id);
       if (!img || !img.complete || img.naturalWidth === 0) continue;
@@ -228,12 +248,12 @@ export default function StatusPanelScanner({
         const cleared = greenFraction(badgeSample) >= BADGE_GREEN_THRESHOLD;
 
         if (!cleared) {
-          markSeen(t.raidLabel); // 이름은 찾았지만 아직 "참여 가능" 상태 — 스캔이 보고는 있다는 걸 보여줌
+          markSeen(characterId, characterName, t.raidLabel);
           continue;
         }
 
-        foundLabelsRef.current.add(t.raidLabel);
-        applyFound(t.raidLabel);
+        foundKeysRef.current.add(key);
+        applyFound(characterId, characterName, t.raidLabel);
       } catch {
         // 이미지 로딩/캔버스 문제로 한 템플릿이 실패해도 나머지는 계속 시도
         continue;
@@ -241,46 +261,58 @@ export default function StatusPanelScanner({
     }
   }
 
+  function upsertEntry(
+    key: string,
+    base: { characterId: string; characterName: string; raidLabel: string },
+    statusPatch: Partial<FoundEntry>
+  ) {
+    setFound((prev) => {
+      const idx = prev.findIndex((f) => f.key === key);
+      if (idx === -1) return [...prev, { key, ...base, status: "checking", ...statusPatch } as FoundEntry];
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...statusPatch };
+      return next;
+    });
+  }
+
   /** 이름은 인식됐지만 아직 클리어(참여 완료 배지)는 아닌 상태를 목록에 표시/갱신한다. */
-  function markSeen(raidLabel: string) {
+  function markSeen(characterId: string, characterName: string, raidLabel: string) {
+    const key = `${characterId}:${raidLabel}`;
     setFound((prev) => {
-      if (prev.some((f) => f.raidLabel === raidLabel)) return prev; // 이미 목록에 있으면 그대로 둠 (checking/applied가 덮어씀)
-      return [...prev, { raidLabel, status: "seen" }];
+      if (prev.some((f) => f.key === key)) return prev; // 이미 목록에 있으면 그대로 둠 (checking/applied가 덮어씀)
+      return [...prev, { key, characterId, characterName, raidLabel, status: "seen" }];
     });
   }
 
-  function upsertFound(raidLabel: string, patch: Partial<FoundEntry>) {
-    setFound((prev) => {
-      if (!prev.some((f) => f.raidLabel === raidLabel)) return [...prev, { raidLabel, status: "checking", ...patch }];
-      return prev.map((f) => (f.raidLabel === raidLabel ? { ...f, ...patch } : f));
-    });
-  }
-
-  async function applyFound(raidLabel: string) {
-    upsertFound(raidLabel, { status: "checking" });
-    const characterId = selectedCharacterIdRef.current;
+  async function applyFound(characterId: string, characterName: string, raidLabel: string) {
+    const key = `${characterId}:${raidLabel}`;
+    const base = { characterId, characterName, raidLabel };
+    upsertEntry(key, base, { status: "checking" });
     const raidId = raidIdByCharacterAndName.get(characterId)?.get(raidLabel);
     if (!raidId) {
-      upsertFound(raidLabel, { status: "not-in-homework" });
+      upsertEntry(key, base, { status: "not-in-homework" });
       return;
     }
     try {
       await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
-      upsertFound(raidLabel, { status: "applied", raidId, characterId, errorMessage: undefined });
+      upsertEntry(key, base, { status: "applied", raidId, errorMessage: undefined });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : undefined;
-      upsertFound(raidLabel, { status: "failed", errorMessage });
+      upsertEntry(key, base, { status: "failed", errorMessage: err instanceof Error ? err.message : undefined });
     }
   }
 
   /** 오탐으로 체크됐을 때 되돌리기. 실제 게임 화면의 배지는 그대로 "참여 완료"로 남아있으므로, 되돌린 뒤
-   *  같은 스캔 세션 동안은 foundLabelsRef에 그대로 남겨둬서 곧바로 다시 자동 체크되지 않게 한다
+   *  같은 스캔 세션 동안은 foundKeysRef에 그대로 남겨둬서 곧바로 다시 자동 체크되지 않게 한다
    *  (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). */
   async function undoFound(entry: FoundEntry) {
-    if (!entry.raidId || !entry.characterId) return;
+    if (!entry.raidId) return;
     try {
       await setRaidCheck({ characterId: entry.characterId, raidId: entry.raidId, gateNumber: 1, checked: false });
-      upsertFound(entry.raidLabel, { status: "undone" });
+      upsertEntry(
+        entry.key,
+        { characterId: entry.characterId, characterName: entry.characterName, raidLabel: entry.raidLabel },
+        { status: "undone" }
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "취소 중 오류가 발생했어요.");
     }
@@ -333,7 +365,7 @@ export default function StatusPanelScanner({
         )}
 
         <span className="text-sm text-neutral-500 dark:text-neutral-400">
-          {scanning ? "스캔 중... 참여 현황 패널을 천천히 스크롤해주세요." : "대기 중"}
+          {scanning ? "스캔 중... 캐릭터를 바꿔가며 참여 현황 패널을 스크롤해주세요." : "대기 중"}
         </span>
       </div>
 
@@ -344,7 +376,8 @@ export default function StatusPanelScanner({
       )}
       {characterNameRegions.length === 0 && (
         <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-400">
-          캐릭터 이름 인식 영역을 등록해두면 캐릭터를 직접 고르지 않아도 OCR로 자동 인식돼요 (선택 사항).
+          캐릭터 이름 인식 영역을 등록해두면 캐릭터를 직접 고르지 않아도 OCR로 자동 인식돼요 (선택 사항). 등록해두면
+          스캔 중 캐릭터를 바꿔도 자동으로 따라가요.
         </p>
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -364,7 +397,7 @@ export default function StatusPanelScanner({
           <ul className="flex flex-col gap-1.5">
             {found.map((f) => (
               <li
-                key={f.raidLabel}
+                key={f.key}
                 className={[
                   "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs",
                   f.status === "applied"
@@ -376,7 +409,9 @@ export default function StatusPanelScanner({
                         : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
                 ].join(" ")}
               >
-                <span>{f.raidLabel}</span>
+                <span>
+                  {f.characterName ? `${f.characterName} · ${f.raidLabel}` : f.raidLabel}
+                </span>
                 <span className="flex items-center gap-2">
                   {f.errorMessage ? `${STATUS_LABEL[f.status]}: ${f.errorMessage}` : STATUS_LABEL[f.status]}
                   {f.status === "applied" && (
