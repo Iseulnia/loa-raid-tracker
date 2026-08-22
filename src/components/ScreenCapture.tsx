@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { saveRaidClearTemplate, deleteRaidClearTemplate, type TemplateType } from "@/app/actions";
 
@@ -54,6 +55,7 @@ export default function ScreenCapture({
   /** 이 화면에서 고를 수 있는 기준 이미지 유형을 제한한다 (탭마다 다른 용도로 쓰기 위함). */
   allowedTypes?: TemplateType[];
 }) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frozenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -280,6 +282,7 @@ export default function ScreenCapture({
         setError(err instanceof Error ? err.message : "저장 중 오류가 발생했어요.");
       } finally {
         setSaving(false);
+        router.refresh(); // handleDelete와 같은 이유로, 저장 후에도 한 번 더 표준 리프레시로 동기화
       }
       return;
     }
@@ -354,6 +357,10 @@ export default function ScreenCapture({
       await deleteRaidClearTemplate(template.id, template.storage_path);
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제 중 오류가 발생했어요.");
+    } finally {
+      // 서버 액션의 revalidatePath가 자체적으로 다시 그리는 과정에서 가끔 렌더링이 꼬일 때가 있어서,
+      // 성공/실패와 상관없이 표준 클라이언트 리프레시로 한 번 더 동기화해준다 (수동 새로고침 없이도 복구됨).
+      router.refresh();
     }
   }
 
