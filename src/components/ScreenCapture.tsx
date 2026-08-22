@@ -63,6 +63,10 @@ export default function ScreenCapture({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState(initialTemplates);
+  const templatesRef = useRef(templates);
+  useEffect(() => {
+    templatesRef.current = templates;
+  }, [templates]);
 
   const raidsById = useMemo(() => new Map(raids.map((r) => [r.id, r])), [raids]);
   const charactersById = useMemo(() => new Map(characters.map((c) => [c.id, c])), [characters]);
@@ -70,6 +74,11 @@ export default function ScreenCapture({
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      // 저장 시 미리보기용으로 만든 blob: URL들을 페이지를 떠날 때 한꺼번에 해제한다 (안 지우고 나가면
+      // 이 컴포넌트가 살아있는 동안 계속 메모리에 남아있음).
+      for (const t of templatesRef.current) {
+        if (t.url?.startsWith("blob:")) URL.revokeObjectURL(t.url);
+      }
     };
   }, []);
 
@@ -224,6 +233,8 @@ export default function ScreenCapture({
 
   async function handleDelete(template: TemplateRow) {
     setTemplates((prev) => prev.filter((t) => t.id !== template.id));
+    // 저장 시 미리보기용으로 만든 blob: URL은 명시적으로 해제하지 않으면 페이지를 떠날 때까지 메모리에 남는다.
+    if (template.url?.startsWith("blob:")) URL.revokeObjectURL(template.url);
     try {
       await deleteRaidClearTemplate(template.id, template.storage_path);
     } catch (err) {
