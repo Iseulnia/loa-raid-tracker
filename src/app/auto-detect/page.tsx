@@ -17,7 +17,7 @@ export default async function AutoDetectPage() {
     supabase
       .from("raid_clear_templates")
       .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_at")
-      .neq("template_type", "status_row") // status_row 템플릿은 '메뉴 감지' 탭 전용이라 여기엔 안 보여줌
+      .in("template_type", ["clear_banner", "result_screen", "gate_checkmark"]) // status_row/character_name은 '메뉴 감지' 탭 전용
       .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("weekly_checks").select("character_id, raid_id").eq("week_key", weekKey),
