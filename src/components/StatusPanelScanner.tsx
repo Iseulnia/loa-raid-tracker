@@ -11,8 +11,6 @@ type CharacterRaidRow = { character_id: string; raid_id: string };
 type CharacterNameRegion = { id: string; crop: CropPct };
 
 const PANEL_SCAN_INTERVAL_MS = 2000; // 패널 전체를 OCR로 읽는 주기 (여러 줄을 한 번에 읽어서 이름표별 스캔보다 느림)
-// 캐릭터 전환(게임에서 다른 캐릭터로 접속)을 스캔 중간에도 잡아내기 위해 주기적으로 다시 OCR을 돈다.
-const CHARACTER_RECHECK_INTERVAL_MS = 2500;
 
 // "seen"은 레이드 이름은 인식했지만 아직 참여 완료가 아닌 상태(= 스캔이 그 행을 제대로 보고는 있다는 증거).
 // "applied"로 넘어가야 실제로 클리어로 체크된 것.
@@ -56,7 +54,6 @@ export default function StatusPanelScanner({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const characterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ocrBusyRef = useRef(false); // 패널 스캔과 캐릭터 인식이 같은 tesseract 워커를 공유해서 겹치지 않게 함
   const foundKeysRef = useRef<Set<string>>(new Set());
   const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
@@ -79,7 +76,6 @@ export default function StatusPanelScanner({
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (characterIntervalRef.current) clearInterval(characterIntervalRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -105,13 +101,13 @@ export default function StatusPanelScanner({
     characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
   }
 
-  async function attemptCharacterOcr() {
+  /** 캐릭터 이름 영역을 다시 읽어서 selectedCharacterIdRef를 최신으로 맞춘다. runPanelScan()의 맨 앞에서
+   *  매번 호출한다 — 별도 타이머로 따로 돌리면, 그 텀 사이에 캐릭터를 바꾸고 바로 스크롤해버릴 경우 이전
+   *  캐릭터로 레이드가 잘못 체크되는 문제가 있었음(호출자가 ocrBusyRef를 관리하므로 여기선 안 건드림). */
+  async function verifyCharacter(video: HTMLVideoElement) {
     const region = characterNameRegions[0];
-    const video = videoRef.current;
-    if (!region || !video || ocrBusyRef.current || characterLockedRef.current) return;
-    if (video.videoWidth === 0) return;
+    if (!region || characterLockedRef.current || video.videoWidth === 0) return;
 
-    ocrBusyRef.current = true;
     setOcrStatus("recognizing");
     try {
       const canvas = document.createElement("canvas");
@@ -138,8 +134,6 @@ export default function StatusPanelScanner({
       }
     } catch {
       setOcrStatus("no-match");
-    } finally {
-      ocrBusyRef.current = false;
     }
   }
 
@@ -168,11 +162,8 @@ export default function StatusPanelScanner({
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
+      void runPanelScan();
       intervalRef.current = setInterval(() => void runPanelScan(), PANEL_SCAN_INTERVAL_MS);
-      if (characterNameRegions.length > 0) {
-        void attemptCharacterOcr();
-        characterIntervalRef.current = setInterval(() => void attemptCharacterOcr(), CHARACTER_RECHECK_INTERVAL_MS);
-      }
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
     }
@@ -182,10 +173,6 @@ export default function StatusPanelScanner({
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
-    }
-    if (characterIntervalRef.current) {
-      clearInterval(characterIntervalRef.current);
-      characterIntervalRef.current = null;
     }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -198,12 +185,16 @@ export default function StatusPanelScanner({
     const canvasEl = canvasRef.current;
     if (!video || !canvasEl || video.videoWidth === 0 || !panelRegion || ocrBusyRef.current) return;
 
-    const characterId = selectedCharacterIdRef.current;
-    if (!characterId) return;
-    const characterName = charactersById.get(characterId)?.name ?? "";
-
     ocrBusyRef.current = true;
     try {
+      // 레이드를 체크하기 직전에 항상 캐릭터부터 다시 확인한다 — 따로 도는 타이머에만 맡기면, 그 텀 사이에
+      // 게임에서 캐릭터를 바꾸고 바로 스크롤해버릴 경우 이전 캐릭터로 잘못 체크되는 문제가 있었음.
+      await verifyCharacter(video);
+
+      const characterId = selectedCharacterIdRef.current;
+      if (!characterId) return;
+      const characterName = charactersById.get(characterId)?.name ?? "";
+
       canvasEl.width = video.videoWidth;
       canvasEl.height = video.videoHeight;
       const ctx = canvasEl.getContext("2d");
@@ -222,7 +213,9 @@ export default function StatusPanelScanner({
         }
 
         foundKeysRef.current.add(key);
-        applyFound(characterId, characterName, row.raidLabel);
+        // await로 순차 처리 — 한 틱에 여러 레이드가 한꺼번에 클리어로 잡히면 setRaidCheck 서버 액션이
+        // 동시에 여러 개 날아가면서 가끔 렌더링이 깨지는(React #441) 문제가 있었음.
+        await applyFound(characterId, characterName, row.raidLabel);
       }
     } catch {
       // 이번 틱은 실패해도 다음 틱에 다시 시도
