@@ -226,11 +226,11 @@ export default function Dashboard({
     entries.sort((a, b) => {
       if (a.label === null) return 1;
       if (b.label === null) return -1;
-      // 원정대(계정) 순서는 예전처럼 아이템레벨 기준(본계 > 부계 > 부부계) 그대로 유지 — 캐릭터 순서
-      // 변경(드래그)은 원정대 "안"에서의 카드 순서만 바꾸고, 어느 원정대가 먼저 오는지는 안 건드린다.
-      const maxA = Math.max(...a.characters.map((c) => c.item_level ?? 0));
-      const maxB = Math.max(...b.characters.map((c) => c.item_level ?? 0));
-      return maxB - maxA;
+      // 캐릭터 순서 변경 팝업에서 원정대 순서도 바꿀 수 있어서, 그 안의 가장 앞선(작은) sort_order로 정렬
+      // (기존 sort_order는 migration_2026-08-23a로 예전 기본 노출 순서와 같아지도록 한 번 정규화해뒀음).
+      const minA = Math.min(...a.characters.map((c) => c.sort_order));
+      const minB = Math.min(...b.characters.map((c) => c.sort_order));
+      return minA - minB;
     });
     return entries;
   }
