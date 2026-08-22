@@ -36,12 +36,17 @@ const GAME_PANEL_ALIASES: Record<string, string> = {
 
 type Rect = { x: number; y: number; w: number; h: number };
 
+const DEFAULT_ALLOWED_TYPES: TemplateType[] = ["clear_banner", "result_screen", "gate_checkmark"];
+
 export default function ScreenCapture({
   raids,
   initialTemplates,
+  allowedTypes = DEFAULT_ALLOWED_TYPES,
 }: {
   raids: RaidOption[];
   initialTemplates: TemplateRow[];
+  /** 이 화면에서 고를 수 있는 기준 이미지 유형을 제한한다 (탭마다 다른 용도로 쓰기 위함). */
+  allowedTypes?: TemplateType[];
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frozenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -69,7 +74,7 @@ export default function ScreenCapture({
   }, [raids]);
   const [selectedRaidLabel, setSelectedRaidLabel] = useState(distinctRaidNames[0] ?? "");
 
-  const [templateType, setTemplateType] = useState<TemplateType>("clear_banner");
+  const [templateType, setTemplateType] = useState<TemplateType>(allowedTypes[0] ?? "clear_banner");
   const [selectedRaidId, setSelectedRaidId] = useState(raids[0]?.id ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -451,7 +456,7 @@ export default function ScreenCapture({
                 }}
                 className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
               >
-                {(Object.keys(TEMPLATE_TYPE_LABEL) as TemplateType[]).map((t) => (
+                {allowedTypes.map((t) => (
                   <option key={t} value={t}>
                     {TEMPLATE_TYPE_LABEL[t]}
                   </option>

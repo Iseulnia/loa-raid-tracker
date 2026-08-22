@@ -106,7 +106,12 @@
   안에만 마운트돼 있어서(캡처 버튼이 그 캔버스에 그려야 frozen이 true가 되는데 버튼 누를 땐 아직 없어서
   조용히 no-op) 버튼이 아예 안 먹혔던 실제 버그였음 — 캔버스를 항상 마운트(안 보일 때만 CSS로 숨김)하도록 수정
 
-**참여현황 패널 스캔 (`StatusPanelScanner.tsx`, `src/lib/rowScan.ts`)**
+**참여현황 패널 스캔 (`/menu-detect` 탭, `StatusPanelScanner.tsx`, `src/lib/rowScan.ts`)**
+- 처음엔 `/auto-detect` 페이지 안에 같이 넣었다가, **사용자 요청으로 완전히 별도 탭("메뉴 감지")으로 분리**함
+  — `/auto-detect` 탭은 이 기능 추가 이전과 100% 동일하게 되돌림(안내 문구, ScreenCapture 유형 선택지 등).
+  이를 위해 `ScreenCapture.tsx`에 `allowedTypes` prop을 추가해서 탭마다 고를 수 있는 기준 이미지 유형을 제한함
+  (`/auto-detect`는 기존 3종만, `/menu-detect`는 `status_row`만). `/auto-detect`의 템플릿 조회 쿼리도
+  `template_type != 'status_row'`로 걸러서 이 탭엔 절대 안 보이게 함
 - 결과화면과 달리 "레이드 참여 현황" 패널은 스크롤 목록이라 각 행의 화면 위치가 고정이 아님 — 그래서
   전용 알고리즘 분리: 레이드 이름표 이미지를 세로 슬라이딩 윈도우로 프레임에서 찾고(`findBestRowMatch`),
   찾은 위치에서 저장 당시의 상대 오프셋만큼 이동시켜 "참여 완료" 배지 위치를 계산한 뒤, 그 영역의 초록 픽셀

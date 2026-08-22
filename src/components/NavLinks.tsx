@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/party", label: "공격대" },
   { href: "/characters", label: "내 캐릭터" },
   { href: "/auto-detect", label: "자동 감지" },
+  { href: "/menu-detect", label: "메뉴 감지" },
 ];
 
 export default function NavLinks() {
