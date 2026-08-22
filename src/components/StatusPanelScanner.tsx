@@ -161,6 +161,8 @@ export default function StatusPanelScanner({
         await videoRef.current.play();
       }
       foundKeysRef.current = new Set();
+      characterLockedRef.current = false; // 새 스캔을 시작할 때마다 자동 인식에 다시 기회를 준다
+      // (전에 수동으로 캐릭터를 골랐던 게 계속 남아있으면, 스캔을 껐다 켜도 영원히 자동 인식이 안 됨)
       setAutoDetectedCharacterId(null);
       setOcrStatus("idle");
       setFound([]);
