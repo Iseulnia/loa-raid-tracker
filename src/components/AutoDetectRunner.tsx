@@ -65,6 +65,7 @@ export default function AutoDetectRunner({
     for (const t of usableTemplates) {
       if (imagesRef.current.has(t.id)) continue;
       const img = new Image();
+      img.crossOrigin = "anonymous"; // Storage(다른 origin) 이미지를 캔버스에서 픽셀 비교하려면 필수 (없으면 캔버스가 오염돼 getImageData가 조용히 실패함)
       img.src = t.url;
       imagesRef.current.set(t.id, img);
     }
@@ -128,18 +129,23 @@ export default function AutoDetectRunner({
 
     let best: { raidId: string; score: number; label: string } | null = null;
 
-    for (const t of usableTemplates) {
-      const img = imagesRef.current.get(t.id);
-      if (!img || !img.complete || img.naturalWidth === 0) continue;
+    try {
+      for (const t of usableTemplates) {
+        const img = imagesRef.current.get(t.id);
+        if (!img || !img.complete || img.naturalWidth === 0) continue;
 
-      const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
-      const templateSample = sampleTemplateImage(img, t.crop);
-      const score = similarity(frameSample, templateSample);
+        const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
+        const templateSample = sampleTemplateImage(img, t.crop);
+        const score = similarity(frameSample, templateSample);
 
-      if (!best || score > best.score) {
-        const raid = raidsById.get(t.raid_id!);
-        best = { raidId: t.raid_id!, score, label: raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음" };
+        if (!best || score > best.score) {
+          const raid = raidsById.get(t.raid_id!);
+          best = { raidId: t.raid_id!, score, label: raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음" };
+        }
       }
+    } catch {
+      setStatusText("이미지 비교 중 오류가 발생했어요 (템플릿 이미지를 불러오지 못했을 수 있어요).");
+      return;
     }
 
     if (best) setLastMatchDebug({ label: best.label, score: best.score });
