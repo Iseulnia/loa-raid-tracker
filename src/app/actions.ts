@@ -182,6 +182,12 @@ export async function deleteCharacter(characterId: string) {
   revalidatePath("/");
 }
 
+/**
+ * revalidatePath를 일부러 안 쓴다 — 대시보드/공격대는 weekly_checks 변경을 Supabase Realtime 구독으로
+ * 이미 실시간 반영하고 있어서(Dashboard.tsx) 굳이 필요 없고, 참여현황 패널 스캔처럼 짧은 시간에 이 액션이
+ * 연달아 여러 번 호출되면(레이드 여러 개를 연속 인식) revalidatePath가 트리거하는 자동 재렌더가 서로
+ * 겹치면서 가끔 렌더링이 깨지는 문제(React #441)가 있었음.
+ */
 export async function setRaidCheck(params: {
   characterId: string;
   raidId: string;
@@ -213,8 +219,6 @@ export async function setRaidCheck(params: {
       .eq("week_key", weekKey);
     if (error) throw new Error(error.message);
   }
-
-  revalidatePath("/");
 }
 
 export type CharacterRaidSelection = { raidId: string; goldEarning: boolean };
