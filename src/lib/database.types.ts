@@ -83,6 +83,8 @@ export type Database = {
           raid_id: string | null;
           template_type: string;
           crop: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
+          raid_label: string | null;
+          badge_crop: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           storage_path: string;
           created_by: string;
           created_at: string;
@@ -92,6 +94,8 @@ export type Database = {
           raid_id?: string | null;
           template_type?: string;
           crop?: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
+          raid_label?: string | null;
+          badge_crop?: { xPct: number; yPct: number; wPct: number; hPct: number } | null;
           storage_path: string;
           created_by: string;
           created_at?: string;
