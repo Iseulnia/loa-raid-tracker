@@ -54,6 +54,10 @@ export default function StatusPanelScanner({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // setInterval에 등록한 콜백은 startScan()을 호출한 그 순간의 runPanelScan 클로저를 영원히 붙잡고 있어서,
+  // 스캔 도중 컴포넌트가 리렌더되면(캐릭터/레이드 목록 등 props가 새로 내려와도) 계속 옛날 클로저로 돌아가는
+  // 문제가 있었다. ref에 매 렌더마다 최신 함수를 담아두고, 인터벌은 항상 이 ref를 통해서만 호출한다.
+  const runPanelScanRef = useRef<() => Promise<void>>(async () => {});
   const ocrBusyRef = useRef(false); // 패널 스캔과 캐릭터 인식이 같은 tesseract 워커를 공유해서 겹치지 않게 함
   const foundKeysRef = useRef<Set<string>>(new Set());
   const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
@@ -162,8 +166,8 @@ export default function StatusPanelScanner({
       setFound([]);
       setScanning(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopScan);
-      void runPanelScan();
-      intervalRef.current = setInterval(() => void runPanelScan(), PANEL_SCAN_INTERVAL_MS);
+      void runPanelScanRef.current();
+      intervalRef.current = setInterval(() => void runPanelScanRef.current(), PANEL_SCAN_INTERVAL_MS);
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
     }
@@ -223,6 +227,10 @@ export default function StatusPanelScanner({
       ocrBusyRef.current = false;
     }
   }
+
+  useEffect(() => {
+    runPanelScanRef.current = runPanelScan;
+  });
 
   function upsertEntry(
     key: string,
