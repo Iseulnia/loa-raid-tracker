@@ -174,6 +174,10 @@
     raid_label/badge_crop 컬럼 추가 (참여현황 패널 스캔용)
 11. `migration_2026-08-22k_character_name_templates.sql` — raid_clear_templates에 character_name 타입 +
     character_id 컬럼 추가 (메뉴 감지 탭 캐릭터 자동 인식용)
+12. `migration_2026-08-22l_fix_template_type_constraint.sql` — j/k에서 `drop constraint if exists
+    raid_clear_templates_template_type_check`가 실제 제약 이름과 안 맞았을 가능성 때문에 status_row insert가
+    계속 실패(0건 저장, React #441)하던 문제 수정. 이름을 가정하지 않고 template_type 언급하는 체크 제약을
+    전부 찾아 지운 뒤 하나로 재생성 + 마지막에 확인용 SELECT로 실제 적용된 제약을 보여줌
 
 새 마이그레이션을 추가할 땐 이 파일 이름 규칙(`migration_YYYY-MM-DD[a-z]_설명.sql`)을 따르고, `schema.sql`도
 같이 최신화해서 새로 설치하는 사람도 한 번에 맞는 스키마를 받도록 유지하세요.
