@@ -232,7 +232,9 @@ export default function ScreenCapture({
         };
 
         const supabase = createClient();
-        const path = `status_row/${selectedRaidLabel}/${Date.now()}.png`;
+        // 경로에 한글(레이드 이름)을 넣으면 Supabase Storage 키 검증에서 거부돼서(Invalid key),
+        // 파일 경로는 ASCII만 쓰고 실제 레이드 이름은 DB의 raid_label 컬럼에만 저장한다.
+        const path = `status_row/shared/${Date.now()}.png`;
         const { error: uploadError } = await supabase.storage
           .from("raid-clear-templates")
           .upload(path, blob, { contentType: "image/png" });
