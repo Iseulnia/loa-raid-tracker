@@ -8,9 +8,11 @@ type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
 type CheckKey = { character_id: string; raid_id: string };
 
-const SCAN_INTERVAL_MS = 1500; // OCR은 픽셀 비교보다 느려서 이미지 비교 때보다 간격을 늘림
-// 연속으로 이만큼 같은 레이드가 나와야 실제로 체크함 (화면 전환 중 프레임 하나가 우연히 잘못 읽히는 것 방지)
-const CONFIRM_SCANS = 2;
+const SCAN_INTERVAL_MS = 800; // 군단장 클리어 배너는 몇 초 안에 보상 화면으로 넘어가버려서, 그 짧은 창을 놓치지 않도록 촘촘하게 스캔
+// 연속으로 이만큼 같은 레이드가 나와야 실제로 체크함. 예전 픽셀 비교 방식의 오탐 방지용이었는데, 지금 OCR은
+// 레이드 이름+난이도 문자열이 둘 다 정확히 일치해야만 매칭되므로 이미 충분히 엄격해서 1번이면 충분함
+// (2번을 요구하면 짧게 스쳐 지나가는 배너를 아예 놓치는 문제가 있었음).
+const CONFIRM_SCANS = 1;
 const RECHECK_COOLDOWN_MS = 30_000; // 같은 (캐릭터,레이드)를 짧은 시간 안에 반복 감지해도 다시 안 쏘게
 
 type AutoCheckEvent = {
