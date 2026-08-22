@@ -82,6 +82,23 @@ export async function setMainCharacter(characterId: string) {
   revalidatePath("/");
 }
 
+/** 대시보드에서 드래그로 정한 새 캐릭터 순서를 저장한다 (배열 순서 = sort_order). 내 캐릭터만 바꿀 수 있음. */
+export async function reorderCharacters(characterIds: string[]) {
+  const { supabase, user } = await requireUser();
+
+  const results = await Promise.all(
+    characterIds.map((id, index) =>
+      supabase.from("characters").update({ sort_order: index }).eq("id", id).eq("owner_id", user.id)
+    )
+  );
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) throw new Error(firstError.message);
+
+  revalidatePath("/characters");
+  revalidatePath("/");
+  revalidatePath("/party");
+}
+
 export type CombatPowerBulkResult = { characterId: string; combatPower: number | null; classEngraving: string | null }[];
 
 /**

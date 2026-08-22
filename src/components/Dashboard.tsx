@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
+import CharacterReorderModal from "@/components/CharacterReorderModal";
 import { splitGold, difficultyColorClass } from "@/lib/raidDisplay";
 import { getClassIcon } from "@/lib/classIcons";
 import { isSupportEngraving } from "@/lib/engravings";
+
+const AUTO_REFRESH_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3시간
 
 type Profile = { id: string; nickname: string };
 type CharacterRow = {
@@ -81,6 +84,8 @@ export default function Dashboard({
     return map;
   });
   const [editingCharacter, setEditingCharacter] = useState<CharacterRow | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [collapsedProfiles, setCollapsedProfiles] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
   const [combatPowerBusy, setCombatPowerBusy] = useState<"refresh" | "reset" | null>(null);
   const router = useRouter();
@@ -94,6 +99,39 @@ export default function Dashboard({
       setCombatPowerBusy(null);
     }
   }
+
+  // 사용자가 오래 갱신 버튼을 안 눌러도 전투력/레벨이 3시간마다 자동으로 갱신되게 한다.
+  // 브라우저별로 마지막 자동 갱신 시각을 기억해뒀다가, 그만큼 지났으면 페이지 열 때 한 번 자동 실행하고,
+  // 탭을 오래 켜두는 경우를 위해 그 뒤로도 3시간 간격 타이머를 돌린다.
+  useEffect(() => {
+    if (mode !== "mine") return;
+    const storageKey = `lastCombatPowerRefresh:${currentUserId}`;
+
+    function maybeAutoRefresh() {
+      let lastRefresh = 0;
+      try {
+        lastRefresh = Number(localStorage.getItem(storageKey) ?? 0);
+      } catch {
+        // 프라이빗 모드 등에서 localStorage가 막혀있으면 그냥 매번 자동 갱신하지 않고 건너뜀
+        return;
+      }
+      if (Date.now() - lastRefresh < AUTO_REFRESH_INTERVAL_MS) return;
+      try {
+        localStorage.setItem(storageKey, String(Date.now()));
+      } catch {
+        // 저장 실패해도 갱신 자체는 계속 진행
+      }
+      setCombatPowerBusy("refresh");
+      refreshAllCombatPower()
+        .then(() => router.refresh())
+        .finally(() => setCombatPowerBusy(null));
+    }
+
+    maybeAutoRefresh();
+    const interval = setInterval(maybeAutoRefresh, AUTO_REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, currentUserId]);
 
   async function handleResetAllCombatPower() {
     const confirmed = window.confirm(
@@ -167,7 +205,7 @@ export default function Dashboard({
       map.set(c.owner_id, list);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => (b.item_level ?? 0) - (a.item_level ?? 0));
+      list.sort((a, b) => a.sort_order - b.sort_order);
     }
     return map;
   }, [characters]);
@@ -188,9 +226,10 @@ export default function Dashboard({
     entries.sort((a, b) => {
       if (a.label === null) return 1;
       if (b.label === null) return -1;
-      const maxA = Math.max(...a.characters.map((c) => c.item_level ?? 0));
-      const maxB = Math.max(...b.characters.map((c) => c.item_level ?? 0));
-      return maxB - maxA;
+      // 캐릭터 순서 변경(드래그)에서 정한 순서를 그대로 반영 — 각 원정대의 가장 앞선(작은) sort_order 기준
+      const minA = Math.min(...a.characters.map((c) => c.sort_order));
+      const minB = Math.min(...b.characters.map((c) => c.sort_order));
+      return minA - minB;
     });
     return entries;
   }
@@ -299,12 +338,57 @@ export default function Dashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characters, characterRaidMap, checkedSet, currentUserId]);
 
+  // 레이드 이름별 출시 순서 (여러 난이도가 있어도 그 이름의 가장 이른 sort_order 하나로 대표) — 현황 카드 정렬용
+  const raidNameOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of raids) {
+      if (!map.has(r.name)) map.set(r.name, r.sort_order);
+    }
+    return map;
+  }, [raids]);
+
+  // 로그인한 사람 기준 "내 캐릭터 전체"에서 레이드 이름별(난이도 무관) 클리어한 캐릭터 수 / 가야 하는 캐릭터 수
+  const myRaidCountByName = useMemo(() => {
+    const map = new Map<string, { done: number; total: number }>();
+    for (const character of characters) {
+      if (character.owner_id !== currentUserId) continue;
+      for (const raid of selectedRaidsFor(character)) {
+        const entry = map.get(raid.name) ?? { done: 0, total: 0 };
+        entry.total++;
+        if (isRaidClearedAtAll(character.id, raid)) entry.done++;
+        map.set(raid.name, entry);
+      }
+    }
+    return Array.from(map.entries()).sort(
+      (a, b) => (raidNameOrder.get(a[0]) ?? 0) - (raidNameOrder.get(b[0]) ?? 0)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characters, characterRaidMap, checkedSet, currentUserId, raidNameOrder]);
+
   function percentOf(earned: number, total: number): number {
     if (total <= 0) return 0;
     return Math.round((earned / total) * 100);
   }
 
-  const visibleProfiles = mode === "mine" ? profiles.filter((p) => p.id === currentUserId) : profiles;
+  function toggleProfileCollapse(profileId: string) {
+    setCollapsedProfiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(profileId)) next.delete(profileId);
+      else next.add(profileId);
+      return next;
+    });
+  }
+
+  // 공격대 탭에서는 내 원정대를 맨 위로 — 등록 순서 그대로면 내 캐릭터가 아래쪽에 묻혀서 찾기 불편했음
+  const sortedProfiles = useMemo(() => {
+    return [...profiles].sort((a, b) => {
+      if (a.id === currentUserId) return -1;
+      if (b.id === currentUserId) return 1;
+      return 0;
+    });
+  }, [profiles, currentUserId]);
+
+  const visibleProfiles = mode === "mine" ? sortedProfiles.filter((p) => p.id === currentUserId) : sortedProfiles;
   const hasAnyVisibleCharacters = visibleProfiles.some((p) => charactersByOwner.has(p.id));
 
   if (!hasAnyVisibleCharacters) {
@@ -324,9 +408,16 @@ export default function Dashboard({
           <div className="flex justify-end gap-2">
             <button
               type="button"
+              onClick={() => setReordering(true)}
+              className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
+            >
+              캐릭터 순서 변경
+            </button>
+            <button
+              type="button"
               onClick={handleRefreshAllCombatPower}
               disabled={combatPowerBusy !== null}
-              title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요."
+              title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요. 3시간마다 자동으로도 갱신돼요."
               className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
             >
               {combatPowerBusy === "refresh" ? "전투력 갱신 중..." : "전투력 전체 갱신"}
@@ -393,6 +484,33 @@ export default function Dashboard({
         </>
       )}
 
+      {myRaidCountByName.length > 0 && (
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <h2 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">내 레이드별 현황</h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {myRaidCountByName.map(([raidName, { done, total }]) => {
+              const complete = done >= total;
+              return (
+                <div
+                  key={raidName}
+                  className={[
+                    "rounded-md border px-3 py-2 text-xs",
+                    complete
+                      ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950"
+                      : "border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800/50",
+                  ].join(" ")}
+                >
+                  <div className="mb-0.5 truncate font-medium text-neutral-700 dark:text-neutral-300">{raidName}</div>
+                  <div className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
+                    {done} / {total}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {visibleProfiles
         .filter((p) => charactersByOwner.has(p.id))
         .map((profile) => (
@@ -404,13 +522,30 @@ export default function Dashboard({
                 : ""
             }
           >
-            <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-              {profile.nickname}
-              {mode === "party" && profile.id === currentUserId && (
-                <span className="ml-1 text-neutral-400 dark:text-neutral-400">(나)</span>
-              )}
-            </h2>
-            {groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
+            {mode === "party" ? (
+              <button
+                type="button"
+                onClick={() => toggleProfileCollapse(profile.id)}
+                className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+              >
+                <span
+                  className={[
+                    "inline-block text-[10px] text-neutral-400 transition-transform dark:text-neutral-500",
+                    collapsedProfiles.has(profile.id) ? "-rotate-90" : "",
+                  ].join(" ")}
+                >
+                  ▼
+                </span>
+                {profile.nickname}
+                {profile.id === currentUserId && (
+                  <span className="text-neutral-400 dark:text-neutral-400">(나)</span>
+                )}
+              </button>
+            ) : (
+              <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">{profile.nickname}</h2>
+            )}
+            {!collapsedProfiles.has(profile.id) &&
+              groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
               <div key={group.label ?? "__unassigned"} className={groupIndex > 0 ? "mt-4" : ""}>
                 {(group.label || allGroups.length > 1) && (
                   <div className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-neutral-400">
@@ -592,6 +727,17 @@ export default function Dashboard({
               next.set(editingCharacter.id, newSelections);
               return next;
             });
+          }}
+        />
+      )}
+
+      {reordering && (
+        <CharacterReorderModal
+          characters={charactersByOwner.get(currentUserId) ?? []}
+          onClose={() => setReordering(false)}
+          onSaved={() => {
+            setReordering(false);
+            router.refresh();
           }}
         />
       )}
