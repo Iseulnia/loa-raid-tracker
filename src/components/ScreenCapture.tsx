@@ -256,32 +256,40 @@ export default function ScreenCapture({
           </p>
         )}
 
+        {/* frozen이 true가 되기 전에 captureFrame()이 이 캔버스에 그려야 하므로, frozen 여부와 상관없이 항상 마운트해둔다
+            (예전엔 {frozen && ...} 안에 있어서 캡처 버튼을 눌러도 캔버스가 아직 없어 아무 일도 안 일어났음). */}
+        <div
+          className={[
+            "relative w-full overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800",
+            frozen ? "" : "hidden",
+          ].join(" ")}
+        >
+          <canvas
+            ref={frozenCanvasRef}
+            className="w-full cursor-crosshair"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          />
+          {selection && frozenCanvasRef.current && (
+            <div
+              className="pointer-events-none absolute border-2 border-emerald-400 bg-emerald-400/20"
+              style={{
+                left: `${(selection.x / frozenCanvasRef.current.width) * 100}%`,
+                top: `${(selection.y / frozenCanvasRef.current.height) * 100}%`,
+                width: `${(selection.w / frozenCanvasRef.current.width) * 100}%`,
+                height: `${(selection.h / frozenCanvasRef.current.height) * 100}%`,
+              }}
+            />
+          )}
+        </div>
+
         {frozen && (
-          <div className="flex flex-col gap-3">
+          <div className="mt-3 flex flex-col gap-3">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등
               최소한만 딱 자르는 게 좋아요).
             </p>
-            <div className="relative w-full overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
-              <canvas
-                ref={frozenCanvasRef}
-                className="w-full cursor-crosshair"
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-              />
-              {selection && frozenCanvasRef.current && (
-                <div
-                  className="pointer-events-none absolute border-2 border-emerald-400 bg-emerald-400/20"
-                  style={{
-                    left: `${(selection.x / frozenCanvasRef.current.width) * 100}%`,
-                    top: `${(selection.y / frozenCanvasRef.current.height) * 100}%`,
-                    width: `${(selection.w / frozenCanvasRef.current.width) * 100}%`,
-                    height: `${(selection.h / frozenCanvasRef.current.height) * 100}%`,
-                  }}
-                />
-              )}
-            </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <select

@@ -9,7 +9,12 @@ type RaidOption = { id: string; name: string; difficulty: string; sort_order: nu
 type ResultTemplate = { id: string; raid_id: string | null; crop: CropPct | null; url: string | null };
 type CheckKey = { character_id: string; raid_id: string };
 
-const MATCH_THRESHOLD = 0.82;
+const MATCH_THRESHOLD = 0.88;
+// 1등과 2등(다른 레이드) 후보의 유사도 차이가 이만큼은 벌어져야 확신함 — 결과화면은 배경/체크마크가
+// 다 비슷해서 엉뚱한 레이드가 우연히 82~86%까지 올라오는 오탐이 있었음, 그래서 임계값만으로는 부족함
+const MATCH_MARGIN = 0.03;
+// 연속으로 이만큼 같은 레이드가 나와야 실제로 체크함 (화면 전환 중 프레임 하나가 우연히 튄 오탐 방지)
+const CONFIRM_SCANS = 2;
 const SCAN_INTERVAL_MS = 1200;
 const RECHECK_COOLDOWN_MS = 30_000; // 같은 (캐릭터,레이드)를 짧은 시간 안에 반복 감지해도 다시 안 쏘게
 
@@ -39,6 +44,7 @@ export default function AutoDetectRunner({
   const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTriggeredRef = useRef<Map<string, number>>(new Map()); // key -> timestamp
+  const pendingMatchRef = useRef<{ raidId: string; count: number } | null>(null);
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
   const [sharing, setSharing] = useState(false);
@@ -128,6 +134,7 @@ export default function AutoDetectRunner({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     let best: { raidId: string; score: number; label: string } | null = null;
+    let secondBestScore = -Infinity; // best와 다른 레이드 중 가장 높은 점수 (margin 판단용)
 
     try {
       for (const t of usableTemplates) {
@@ -137,10 +144,14 @@ export default function AutoDetectRunner({
         const frameSample = sampleFrameCrop(canvas, canvas.width, canvas.height, t.crop);
         const templateSample = sampleTemplateImage(img, t.crop);
         const score = similarity(frameSample, templateSample);
+        const raid = raidsById.get(t.raid_id!);
+        const candidate = { raidId: t.raid_id!, score, label: raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음" };
 
-        if (!best || score > best.score) {
-          const raid = raidsById.get(t.raid_id!);
-          best = { raidId: t.raid_id!, score, label: raid ? `${raid.name} ${raid.difficulty}` : "알 수 없음" };
+        if (!best || candidate.score > best.score) {
+          if (best && best.raidId !== candidate.raidId) secondBestScore = Math.max(secondBestScore, best.score);
+          best = candidate;
+        } else if (candidate.raidId !== best.raidId) {
+          secondBestScore = Math.max(secondBestScore, candidate.score);
         }
       }
     } catch {
@@ -150,17 +161,28 @@ export default function AutoDetectRunner({
 
     if (best) setLastMatchDebug({ label: best.label, score: best.score });
 
-    if (best && best.score >= MATCH_THRESHOLD) {
-      const key = `${selectedCharacterId}:${best.raidId}`;
-      const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
-      const alreadyChecked = checkedSetRef.current.has(key);
-      const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
+    const confident = best !== null && best.score >= MATCH_THRESHOLD && best.score - secondBestScore >= MATCH_MARGIN;
 
-      if (!alreadyChecked && cooledDown) {
-        lastTriggeredRef.current.set(key, Date.now());
-        setStatusText(`${best.label} 감지됨 → 자동 체크 중...`);
-        triggerAutoCheck(best.raidId, best.label);
-      }
+    if (!confident) {
+      pendingMatchRef.current = null;
+      return;
+    }
+
+    const pending = pendingMatchRef.current;
+    pendingMatchRef.current =
+      pending && pending.raidId === best!.raidId ? { raidId: pending.raidId, count: pending.count + 1 } : { raidId: best!.raidId, count: 1 };
+
+    if (pendingMatchRef.current.count < CONFIRM_SCANS) return;
+
+    const key = `${selectedCharacterId}:${best!.raidId}`;
+    const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
+    const alreadyChecked = checkedSetRef.current.has(key);
+    const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
+
+    if (!alreadyChecked && cooledDown) {
+      lastTriggeredRef.current.set(key, Date.now());
+      setStatusText(`${best!.label} 감지됨 → 자동 체크 중...`);
+      triggerAutoCheck(best!.raidId, best!.label);
     }
   }
 
