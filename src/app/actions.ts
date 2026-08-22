@@ -208,7 +208,22 @@ export async function setRaidCheck(params: {
       },
       { onConflict: "character_id,raid_id,gate_number,week_key" }
     );
-    if (error) throw new Error(error.message);
+    if (error) {
+      // RLS 위반이 반복돼서(#441로 감싸져 클라이언트에서는 원인이 안 보임) 원인 진단용으로 실제
+      // character_id의 소유자가 누구인지까지 같이 남긴다 (Vercel Logs에서 확인).
+      const { data: ownerCheck } = await supabase
+        .from("characters")
+        .select("id, owner_id, name")
+        .eq("id", params.characterId)
+        .maybeSingle();
+      console.error("[setRaidCheck] upsert 실패", {
+        error: error.message,
+        authUserId: user.id,
+        requestedCharacterId: params.characterId,
+        characterRow: ownerCheck,
+      });
+      throw new Error(error.message);
+    }
   } else {
     const { error } = await supabase
       .from("weekly_checks")
