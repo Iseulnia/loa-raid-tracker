@@ -226,6 +226,20 @@ create policy "checks_delete_own_character" on public.weekly_checks
       where c.id = character_id and c.owner_id = auth.uid()
     )
   );
+-- upsert가 이미 존재하는 행에 대해서는 내부적으로 UPDATE를 시도하므로 이 정책도 필요하다
+-- (없으면 "이미 한 번 체크된 걸 다시 체크"할 때 RLS로 거부됨).
+create policy "checks_update_own_character" on public.weekly_checks
+  for update using (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  ) with check (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
 
 -- ─────────────────────────────────────────────
 -- 6. 실시간 브로드캐스트 활성화 (체크하면 다른 친구 화면에도 바로 반영)

@@ -136,9 +136,22 @@
 - setRaidCheck으로 체크된 항목엔 취소 버튼 추가 (오탐 대응). 취소해도 게임 화면 배지는 그대로 "참여
   완료"라서, 같은 세션 동안은 재감지 대상에서 제외해 곧바로 다시 체크되는 걸 막음. 레이드 이름만 인식되고
   아직 클리어 상태가 아니면 "클리어 X"로 목록에 표시해서 스캔이 제대로 보고 있는지 확인 가능하게 함
-- **버그였던 것**: 캐릭터 자동 인식 직후 같은 스캔 틱 안에서 레이드까지 인식되면, `selectedCharacterIdRef`가
-  아직 useEffect로 갱신되기 전(비동기)이라 예전 캐릭터ID로 체크를 시도해 실패하는 경쟁 상태가 있었음 → 인식
-  시점에 ref를 동기적으로 바로 갱신하도록 수정. 실패 사유도 이제 실제 에러 메시지까지 화면에 같이 보여줌
+- **체크 실패(React #441)의 진짜 원인 — weekly_checks에 UPDATE RLS 정책이 아예 없었음**: 클리어로 인식된
+  레이드마다 "체크 실패: React #441"이 반복 재현돼서 여러 라운드에 걸쳐 다른 원인들을 의심하고 고쳤음
+  (① `selectedCharacterIdRef`가 useEffect로 비동기 갱신되는 경쟁 상태 → 동기 갱신으로 수정, ② 한 틱에
+  레이드 여러 개가 동시에 클리어로 잡히면 setRaidCheck가 병렬로 여러 번 날아가던 것 → 순차 처리로 수정,
+  ③ setInterval 콜백이 startScan() 시점의 낡은 클로저를 계속 참조하던 것 → ref로 항상 최신 함수를 참조하도록
+  수정). 셋 다 실제로 있던 문제라 고칠 가치는 있었지만, **진짜 원인은 따로 있었음**: `setRaidCheck`이
+  upsert를 쓰는데, 이미 존재하는 (캐릭터,레이드,관문,주차) 행에 대해서는 upsert가 내부적으로
+  `ON CONFLICT DO UPDATE`로 UPDATE를 시도한다. 그런데 `weekly_checks`엔 SELECT/INSERT/DELETE 정책만 있고
+  **UPDATE 정책이 하나도 없어서**, RLS가 켜진 상태에서 UPDATE는 기본적으로 전부 거부되고 있었음 — "이미 한
+  번이라도 체크된 적 있는 (캐릭터,레이드) 조합을 다시 체크"하려는 시도만 골라서 실패했던 것 (에러 메시지의
+  "(USING expression)"이 결정적 단서였음 — INSERT 정책은 WITH CHECK를 쓰고 USING은 UPDATE/DELETE/SELECT
+  정책에서만 씀). 소유권 확인(`character.owner_id` = `auth.uid()`)까지 직접 로그로 대조해서 완전히 일치하는
+  걸 확인한 뒤에야 이 결론에 도달함 → `checks_update_own_character` UPDATE 정책 추가로 해결
+  (`migration_2026-08-22o`). 참고로 Dashboard/AutoDetectRunner의 수동 체크가 항상 잘 됐던 이유는, 그쪽에서
+  테스트한 조합들이 우연히 매번 "처음 체크하는" 상황(순수 INSERT)이었기 때문 — 이 버그는 오직 "이미 체크된
+  걸 다시 체크"하는 경우에만 재현됨
 - 업로드 경로에 한글(레이드 이름)을 그대로 넣었다가 Supabase Storage 키 검증에서 거부(Invalid key)당한 적
   있음 → 경로는 항상 ASCII만 쓰고, 실제 이름은 DB 컬럼에만 저장하도록 수정함 (이후 이런 템플릿류 경로 만들 때
   항상 주의)
@@ -190,6 +203,8 @@
     (자동 감지 결과화면 인식을 픽셀 비교→OCR로 전환하면서 신설)
 14. `migration_2026-08-22n_participation_panel_ocr.sql` — template_type 체크 제약에
     participation_panel_ocr 추가 (참여현황 패널 레이드 인식을 슬라이딩 매칭→OCR로 전환하면서 신설)
+15. `migration_2026-08-22o_weekly_checks_update_policy.sql` — weekly_checks에 UPDATE RLS 정책이
+    아예 없었던 버그 수정 (아래 "체크 실패(React #441)" 항목 참고, 이게 진짜 원인이었음)
 
 새 마이그레이션을 추가할 땐 이 파일 이름 규칙(`migration_YYYY-MM-DD[a-z]_설명.sql`)을 따르고, `schema.sql`도
 같이 최신화해서 새로 설치하는 사람도 한 번에 맞는 스키마를 받도록 유지하세요.
