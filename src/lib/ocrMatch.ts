@@ -51,11 +51,18 @@ function enhanceContrast(canvas: HTMLCanvasElement) {
   ctx.putImageData(imageData, 0, 0);
 }
 
+// OCR로 실제 글자 크기를 미리 재서 배율을 정하는 건 불가능하다(그러려면 이미 OCR이 한 번 성공해야 하는
+// 순환 문제라서). 대신 "충분히 크게 확대해두면 원본 글자가 작아도 상관없다"는 접근으로, 폭·높이 둘 다
+// 넉넉한 최소 크기를 보장한다. 폭만 기준으로 삼으면 크롭이 가로로 넓고 얇을 때(이름표처럼) 세로 해상도가
+// 부족할 수 있어서 높이 기준도 같이 둠.
+const MIN_OCR_WIDTH_PX = 400;
+const MIN_OCR_HEIGHT_PX = 100;
+
 /** 프레임에서 crop 영역만 잘라, 작은 글자도 잘 읽히도록 확대 + 대비 강화해서 캔버스로 만든다. */
 function cropRegionForOcr(source: CanvasImageSource, sourceW: number, sourceH: number, crop: CropPct): HTMLCanvasElement {
   const sw = crop.wPct * sourceW;
   const sh = crop.hPct * sourceH;
-  const scale = Math.max(1, 320 / sw); // 원본이 너무 작으면 최소 폭 320px 정도로 확대
+  const scale = Math.max(1, MIN_OCR_WIDTH_PX / sw, MIN_OCR_HEIGHT_PX / sh);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(sw * scale);
   canvas.height = Math.round(sh * scale);
