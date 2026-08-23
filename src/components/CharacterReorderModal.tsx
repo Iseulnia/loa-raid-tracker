@@ -52,30 +52,22 @@ export default function CharacterReorderModal({
   const dragRef = useRef<{ groupIndex: number; itemIndex: number } | null>(null);
 
   // 네이티브 HTML5 드래그는 목록 순서가 바뀔 때마다 항목이 순간이동하듯 툭툭 끊겨 보여서, FLIP 기법으로
-  // 부드럽게 밀리는 것처럼 보이게 한다: 순서가 바뀐 직후 각 항목을 "바뀌기 전 위치"로 즉시(트랜지션 없이)
-  // 옮겨두고, 다음 프레임에 트랜지션을 걸어서 제자리로 돌아오게 한다.
+  // 부드럽게 밀리는 것처럼 보이게 한다. 처음엔 CSS transition을 수동으로 껐다 켜는 방식으로 만들었는데,
+  // 드래그 중 dragover가 아주 빠르게 여러 번 발생해서 애니메이션이 끝나기 전에 다음 순서 변경이 들어오는
+  // 경우가 흔했고, 그때 이전 트랜지션의 잔여 상태와 새 트랜지션이 서로 얽혀서(rAF 취소로도 완전히 못 막음)
+  // 같은 항목이 두 번 움직이는 것처럼 보이는 문제가 계속 있었다. Web Animations API(`el.animate`)로 바꾸면
+  // 매번 이전 애니메이션 인스턴스를 명시적으로 `cancel()`할 수 있고, 취소하면 그 애니메이션이 남긴 시각
+  // 효과가 인라인 스타일 없이 즉시 완전히 사라져서 다음 측정이 항상 "진짜 배치된 자리"를 기준으로 이뤄진다
+  // — 수동 transition 방식보다 훨씬 안정적이다.
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const prevRectsRef = useRef<Map<string, DOMRect>>(new Map());
-  const rafIdRef = useRef<number | null>(null);
+  const animRefs = useRef<Map<string, Animation>>(new Map());
 
   useLayoutEffect(() => {
-    // 직전 순서 변경에서 예약해둔 rAF가 아직 안 끝난 채로 다음 순서 변경이 들어오면, 그 오래된 콜백이
-    // 이번에 새로 건 트랜지션/transform을 나중에 덮어써서 애니메이션이 두 번 재생되는 것처럼 보였다.
-    // 새로 예약하기 전에 이전 예약을 취소해서 항상 가장 최근 것 하나만 실행되게 한다.
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-
-    // 드래그 중엔 dragover가 아주 빠르게 여러 번 발생해서, 이전 순서 변경의 200ms 트랜지션이 채 안 끝난
-    // 채로 다음 순서 변경이 들어오는 경우가 흔하다. 그 상태에서 그냥 getBoundingClientRect를 재면 트랜지션
-    // 도중의 어중간한 위치를 "지금 자리"로 잘못 측정하게 돼서 델타 계산이 틀어지고, 그 결과 애니메이션이
-    // 안 먹히거나 어긋나 보이는 게 바로 "적용될 때도 있고 안 될 때도 있는" 원인이었다. 매번 측정하기 전에
-    // 먼저 트랜지션 없이 transform을 확실히 지워서, 항상 "진짜 배치된 자리"를 기준으로 계산하게 고친다.
-    itemRefs.current.forEach((el) => {
-      el.style.transition = "none";
-      el.style.transform = "";
-    });
+    // 진행 중이던 애니메이션을 위치 측정 전에 먼저 전부 취소한다 — 취소된 애니메이션은 인라인 스타일을
+    // 남기지 않고 즉시 원래(진짜 배치된) 위치로 돌아가므로, 이후 getBoundingClientRect가 항상 정확하다.
+    animRefs.current.forEach((anim) => anim.cancel());
+    animRefs.current.clear();
 
     const nextRects = new Map<string, DOMRect>();
     itemRefs.current.forEach((el, id) => {
@@ -88,16 +80,11 @@ export default function CharacterReorderModal({
       if (!prev || !next) return;
       const deltaY = prev.top - next.top;
       if (Math.abs(deltaY) < 0.5) return;
-      el.style.transform = `translateY(${deltaY}px)`;
-      el.getBoundingClientRect(); // 강제 리플로우 — 트랜지션을 걸기 전에 지금 transform이 먼저 반영되게 함
-    });
-
-    rafIdRef.current = requestAnimationFrame(() => {
-      rafIdRef.current = null;
-      itemRefs.current.forEach((el) => {
-        el.style.transition = "transform 200ms ease";
-        el.style.transform = "";
-      });
+      const anim = el.animate(
+        [{ transform: `translateY(${deltaY}px)` }, { transform: "translateY(0)" }],
+        { duration: 200, easing: "ease-out" }
+      );
+      animRefs.current.set(id, anim);
     });
 
     prevRectsRef.current = nextRects;
