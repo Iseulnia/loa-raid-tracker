@@ -714,7 +714,7 @@ export default function Dashboard({
                 className="mb-2 text-xs text-neutral-400 underline hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
               >
                 {difficultyFilterByProfile.get(profile.id)!.raidName} {difficultyFilterByProfile.get(profile.id)!.difficulty}{" "}
-                가는 캐릭터만 보는 중 · 전체 캐릭터 보기
+                미체크 캐릭터만 보는 중 · 전체 캐릭터 보기
               </button>
             )}
             {!collapsedProfiles.has(profile.id) &&
@@ -723,8 +723,12 @@ export default function Dashboard({
                   const filter = difficultyFilterByProfile.get(profile.id);
                   const profileCharacters = charactersByOwner.get(profile.id)!;
                   if (!filter) return profileCharacters;
+                  // 그 레이드+난이도를 숙제로 고른 것뿐 아니라, 아직 이번 주에 그걸 안(못) 간 캐릭터만
+                  // 남긴다 — "누가 아직 안 갔는지" 확인하기 위한 필터라서 이미 체크된 캐릭터는 빼야 함.
                   return profileCharacters.filter((c) =>
-                    selectedRaidsFor(c).some((r) => r.name === filter.raidName && r.difficulty === filter.difficulty)
+                    selectedRaidsFor(c).some(
+                      (r) => r.name === filter.raidName && r.difficulty === filter.difficulty && !isRaidClearedAtAll(c.id, r)
+                    )
                   );
                 })()
               ).map((group, groupIndex, allGroups) => (
