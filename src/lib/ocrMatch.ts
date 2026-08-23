@@ -181,6 +181,17 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
 // 클리어의 필수 조건으로 둔다(사용자가 실제 게임 화면으로 확인해준 내용).
 const CLEAR_BUTTON_TEXT = normalize("나가기");
 
+// 일부 레이드는 화면에 난이도가 "노말"이 아니라 "싱글 모드"로 표시되는데(사용자 확인: 컨텐츠 자체는
+// 노말과 동일), DB의 난이도 값은 그대로 "노말"이라 OCR 텍스트만 별칭으로 같이 인정해준다.
+const DIFFICULTY_ALIASES: Record<string, string[]> = {
+  노말: ["싱글모드"],
+};
+
+function difficultyTextMatches(normalizedOcr: string, difficulty: string): boolean {
+  if (normalizedOcr.includes(difficulty)) return true;
+  return (DIFFICULTY_ALIASES[difficulty] ?? []).some((alias) => normalizedOcr.includes(alias));
+}
+
 /**
  * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드] ... 나가기" 등)와 레이드 목록을 비교해 어떤
  * 레이드·난이도가 클리어됐는지 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은
@@ -198,7 +209,7 @@ export function matchRaidFromText<T extends { id: string; name: string; difficul
   for (const r of raids) {
     const name = normalize(r.name);
     const difficulty = normalize(r.difficulty);
-    if (name && difficulty && normalizedOcr.includes(name) && normalizedOcr.includes(difficulty)) {
+    if (name && difficulty && normalizedOcr.includes(name) && difficultyTextMatches(normalizedOcr, difficulty)) {
       return r;
     }
   }
