@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { recognizeRegionText, matchRaidFromText, type CropPct } from "@/lib/ocrMatch";
+import { recognizeRegionText, matchRaidFromText, matchCharacterName, type CropPct } from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
@@ -24,14 +24,19 @@ type AutoCheckEvent = {
   undone: boolean;
 };
 
+type OcrStatus = "idle" | "recognizing" | "matched" | "no-match";
+
 export default function AutoDetectRunner({
   characters,
   resultScreenOcrRegion,
+  characterNameRegion,
   raids,
   initialChecks,
 }: {
   characters: CharacterOption[];
   resultScreenOcrRegion: CropPct | null;
+  /** 레이드 중 화면 우측 파티원 목록 맨 위(항상 내 캐릭터) 이름 인식 영역 — 등록 안 해도 기존처럼 직접 고르면 됨. */
+  characterNameRegion: CropPct | null;
   raids: RaidOption[];
   initialChecks: CheckKey[];
 }) {
@@ -39,11 +44,23 @@ export default function AutoDetectRunner({
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // setInterval에 등록한 콜백은 startShare()를 호출한 순간의 runScan 클로저를 계속 붙잡고 있어서, 스캔 도중
+  // 캐릭터 자동 인식으로 selectedCharacterId가 바뀌어도 반영이 안 되는 문제가 있었다(메뉴 감지에서 이미 한 번
+  // 겪은 것과 같은 stale closure 버그). ref에 매 렌더마다 최신 함수를 담아두고, 인터벌은 이 ref로만 호출한다.
+  const runScanRef = useRef<() => Promise<void>>(async () => {});
   const ocrBusyRef = useRef(false);
   const lastTriggeredRef = useRef<Map<string, number>>(new Map()); // key -> timestamp
   const pendingMatchRef = useRef<{ raidId: string; count: number } | null>(null);
+  const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
+  const selectedCharacterIdRef = useRef(characters[0]?.id ?? "");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
+  const [autoDetectedCharacterId, setAutoDetectedCharacterId] = useState<string | null>(null);
+  const [characterOcrStatus, setCharacterOcrStatus] = useState<OcrStatus>("idle");
+  useEffect(() => {
+    selectedCharacterIdRef.current = selectedCharacterId;
+  }, [selectedCharacterId]);
+
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
   const [statusText, setStatusText] = useState("대기 중");
@@ -64,6 +81,48 @@ export default function AutoDetectRunner({
     };
   }, []);
 
+  function selectCharacterManually(characterId: string) {
+    selectedCharacterIdRef.current = characterId;
+    setSelectedCharacterId(characterId);
+    setAutoDetectedCharacterId(null);
+    characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
+  }
+
+  /** 파티원 목록 맨 위 캐릭터 이름을 읽어서 selectedCharacterIdRef를 최신으로 맞춘다. runScan()의 맨 앞에서
+   *  매번 호출한다 — 별도 타이머로 따로 돌리면, 그 텀 사이에 레이드가 끝나버릴 경우 이전 캐릭터로 잘못
+   *  체크되는 문제가 있음(메뉴 감지에서 겪었던 것과 같은 이유, 그래서 여기도 처음부터 병합해둠). */
+  async function verifyCharacter(video: HTMLVideoElement) {
+    if (!characterNameRegion || characterLockedRef.current || video.videoWidth === 0) return;
+
+    setCharacterOcrStatus("recognizing");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, characterNameRegion);
+      const matched = matchCharacterName(text, characters);
+
+      if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
+
+      if (matched) {
+        if (matched.id !== selectedCharacterIdRef.current) {
+          selectedCharacterIdRef.current = matched.id;
+          setSelectedCharacterId(matched.id);
+        }
+        setAutoDetectedCharacterId(matched.id);
+        setCharacterOcrStatus("matched");
+      } else {
+        setCharacterOcrStatus("no-match");
+      }
+    } catch {
+      setCharacterOcrStatus("no-match");
+    }
+  }
+
   async function startShare() {
     setError("");
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -81,11 +140,15 @@ export default function AutoDetectRunner({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      characterLockedRef.current = false; // 새 스캔을 시작할 때마다 자동 인식에 다시 기회를 준다
+      setAutoDetectedCharacterId(null);
+      setCharacterOcrStatus("idle");
       setSharing(true);
       setStatusText("감지 중...");
       pendingMatchRef.current = null;
       stream.getVideoTracks()[0]?.addEventListener("ended", stopShare);
-      intervalRef.current = setInterval(runScan, SCAN_INTERVAL_MS);
+      void runScanRef.current();
+      intervalRef.current = setInterval(() => void runScanRef.current(), SCAN_INTERVAL_MS);
     } catch {
       setError("화면공유를 시작하지 못했어요 (권한을 거부했거나 취소했을 수 있어요).");
     }
@@ -110,6 +173,10 @@ export default function AutoDetectRunner({
 
     ocrBusyRef.current = true;
     try {
+      await verifyCharacter(video);
+      const characterId = selectedCharacterIdRef.current;
+      if (!characterId) return;
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
@@ -133,7 +200,7 @@ export default function AutoDetectRunner({
       if (pendingMatchRef.current.count < CONFIRM_SCANS) return;
 
       const raidLabel = `${matched.name} ${matched.difficulty}`;
-      const key = `${selectedCharacterId}:${matched.id}`;
+      const key = `${characterId}:${matched.id}`;
       const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
       const alreadyChecked = checkedSetRef.current.has(key);
       const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
@@ -141,7 +208,7 @@ export default function AutoDetectRunner({
       if (!alreadyChecked && cooledDown) {
         lastTriggeredRef.current.set(key, Date.now());
         setStatusText(`${raidLabel} 감지됨 → 자동 체크 중...`);
-        triggerAutoCheck(matched.id, raidLabel);
+        triggerAutoCheck(characterId, matched.id, raidLabel);
       }
     } catch {
       setStatusText("텍스트 인식 중 오류가 발생했어요.");
@@ -150,13 +217,17 @@ export default function AutoDetectRunner({
     }
   }
 
-  async function triggerAutoCheck(raidId: string, raidLabel: string) {
-    const key = `${selectedCharacterId}:${raidId}`;
+  useEffect(() => {
+    runScanRef.current = runScan;
+  });
+
+  async function triggerAutoCheck(characterId: string, raidId: string, raidLabel: string) {
+    const key = `${characterId}:${raidId}`;
     try {
-      await setRaidCheck({ characterId: selectedCharacterId, raidId, gateNumber: 1, checked: true });
+      await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
       setCheckedSet((prev) => new Set(prev).add(key));
       setEvents((prev) => [
-        { id: `${Date.now()}`, characterId: selectedCharacterId, raidId, raidLabel, at: Date.now(), undone: false },
+        { id: `${Date.now()}`, characterId, raidId, raidLabel, at: Date.now(), undone: false },
         ...prev,
       ]);
       setStatusText(`${raidLabel} 자동 체크 완료`);
@@ -185,9 +256,8 @@ export default function AutoDetectRunner({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={selectedCharacterId}
-          onChange={(e) => setSelectedCharacterId(e.target.value)}
-          disabled={sharing}
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          onChange={(e) => selectCharacterManually(e.target.value)}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
         >
           {characters.length === 0 && <option value="">캐릭터 없음</option>}
           {characters.map((c) => (
@@ -196,6 +266,17 @@ export default function AutoDetectRunner({
             </option>
           ))}
         </select>
+        {autoDetectedCharacterId === selectedCharacterId && (
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
+            OCR로 자동 인식됨
+          </span>
+        )}
+        {sharing && characterOcrStatus === "recognizing" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">캐릭터 이름 인식 중...</span>
+        )}
+        {sharing && characterOcrStatus === "no-match" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">자동 인식 실패 — 직접 선택해주세요</span>
+        )}
 
         {!sharing ? (
           <button
@@ -222,6 +303,12 @@ export default function AutoDetectRunner({
       {!resultScreenOcrRegion && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
           아직 &ldquo;레이드 결과화면 텍스트 인식 영역&rdquo;이 등록되지 않았어요. 아래에서 먼저 추가해주세요.
+        </p>
+      )}
+      {!characterNameRegion && (
+        <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-400">
+          &ldquo;파티원 목록 맨 위 캐릭터 이름 인식 영역&rdquo;을 등록해두면 캐릭터를 직접 고르지 않아도 OCR로
+          자동 인식돼요(선택 사항). 등록해두면 스캔 중 캐릭터를 바꿔도 자동으로 따라가요.
         </p>
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}

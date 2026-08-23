@@ -29,6 +29,7 @@ const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
   character_name: "캐릭터 이름 인식 영역(OCR, 메뉴 화면 고정 위치)",
   result_screen_ocr: "레이드 결과화면 텍스트 인식 영역(OCR, 고정 위치)",
   participation_panel_ocr: "레이드 참여현황 패널 인식 영역(OCR, 스크롤 목록 전체)",
+  party_top_name_ocr: "파티원 목록 맨 위 캐릭터 이름 인식 영역(OCR, 레이드 중 고정 위치)",
 };
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -331,7 +332,9 @@ export default function ScreenCapture({
                   ? "레이드 결과화면에서 레이드명과 난이도가 함께 보이는 텍스트 부분만 드래그로 선택하세요 (예: '종막 : 최후의 날 [하드]'). 한 번만 등록하면 모든 레이드에 재사용돼요."
                   : templateType === "participation_panel_ocr"
                     ? "'레이드 참여 현황' 패널에서 레이드 목록이 보이는 영역 전체를 넉넉하게 드래그로 선택하세요. 한 번만 등록하면 모든 레이드에 재사용돼요."
-                    : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
+                    : templateType === "party_top_name_ocr"
+                      ? "레이드 중 화면 우측 파티원 목록 맨 위(항상 내 캐릭터)에 뜨는 이름 부분만 드래그로 선택하세요. 한 번만 등록하면 캐릭터를 바꿔도 자동으로 인식돼요."
+                      : "필요한 부분만 마우스로 드래그해서 선택한 뒤 저장하세요 (배너 문구, 레이드명 텍스트, 체크마크 아이콘 등 최소한만 딱 자르는 게 좋아요)."}
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
