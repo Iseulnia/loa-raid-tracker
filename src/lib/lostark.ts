@@ -59,8 +59,11 @@ export async function fetchRoster(characterName: string): Promise<LostArkSibling
   return data ?? [];
 }
 
-/** 캐릭터 하나의 전투력을 가져온다. 프로필 조회가 실패해도 전체 목록 조회를 막지 않도록 null로 처리한다. */
-export async function fetchCombatPower(characterName: string): Promise<number | null> {
+export type CombatPowerProfile = { combatPower: number | null; itemLevel: number | null };
+
+/** 캐릭터 하나의 전투력+아이템 레벨을 가져온다("프로필 조회" 응답 하나에 둘 다 들어있어서 API 호출을
+ *  따로 안 나눠도 됨). 프로필 조회가 실패해도 전체 목록 조회를 막지 않도록 null로 처리한다. */
+export async function fetchCombatPower(characterName: string): Promise<CombatPowerProfile> {
   try {
     const res = await fetch(
       `${BASE_URL}/armories/characters/${encodeURIComponent(characterName)}/profiles`,
@@ -72,12 +75,14 @@ export async function fetchCombatPower(characterName: string): Promise<number | 
         cache: "no-store",
       }
     );
-    if (!res.ok) return null;
-    const data = (await res.json()) as { CombatPower?: string } | null;
-    if (!data?.CombatPower) return null;
-    return parseFormattedNumber(data.CombatPower);
+    if (!res.ok) return { combatPower: null, itemLevel: null };
+    const data = (await res.json()) as { CombatPower?: string; ItemAvgLevel?: string } | null;
+    return {
+      combatPower: data?.CombatPower ? parseFormattedNumber(data.CombatPower) : null,
+      itemLevel: data?.ItemAvgLevel ? parseFormattedNumber(data.ItemAvgLevel) : null,
+    };
   } catch {
-    return null;
+    return { combatPower: null, itemLevel: null };
   }
 }
 

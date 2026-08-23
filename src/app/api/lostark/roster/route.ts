@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     // 캐릭터별 전투력/직업 각인은 별도 API 호출이 필요해서 병렬로 채워넣는다 (실패해도 나머지는 계속 진행).
     const enriched = await Promise.all(
       roster.map(async (r) => {
-        const [CombatPower, ClassEngraving] = await Promise.all([
+        const [{ combatPower: CombatPower }, ClassEngraving] = await Promise.all([
           fetchCombatPower(r.CharacterName),
           fetchClassEngraving(r.CharacterName),
         ]);

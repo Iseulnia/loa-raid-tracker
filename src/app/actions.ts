@@ -99,38 +99,48 @@ export async function reorderCharacters(characterIds: string[]) {
   revalidatePath("/party");
 }
 
-export type CombatPowerBulkResult = { characterId: string; combatPower: number | null; classEngraving: string | null }[];
+export type CombatPowerBulkResult = {
+  characterId: string;
+  combatPower: number | null;
+  itemLevel: number | null;
+  classEngraving: string | null;
+}[];
 
 /**
  * 로스트아크는 카오스던전 세팅과 레이드 세팅이 따로 있어서, API가 갱신되는 순간 카던 세팅 중이면
  * 전투력이 실제 레이드 전투력보다 낮게 잡힐 수 있다. 그래서 새로 받은 값이 기존 저장값보다 높을 때만 갱신한다
- * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음). 직업 각인도 그 순간의 값을 함께 저장해서,
- * "최고 전투력을 기록했을 때의 각인" 기준으로 서포터/딜러가 표시되도록 한다. 내 캐릭터 전체를 한 번에 처리한다.
+ * (한 번 기록된 "최고 전투력"은 낮은 스냅샷으로 덮어써지지 않음). 아이템 레벨도 같은 이유로 세팅에 따라
+ * 순간적으로 낮게 잡힐 수 있어서 동일하게 "더 높을 때만 갱신" 규칙을 적용한다. 직업 각인도 그 순간의 값을
+ * 함께 저장해서, "최고 전투력을 기록했을 때의 각인" 기준으로 서포터/딜러가 표시되도록 한다. 내 캐릭터
+ * 전체를 한 번에 처리한다.
  */
 export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
   const { data: myCharacters, error: fetchError } = await supabase
     .from("characters")
-    .select("id, name, combat_power, class_engraving")
+    .select("id, name, combat_power, item_level, class_engraving")
     .eq("owner_id", user.id);
   if (fetchError) throw new Error(fetchError.message);
 
   const results = await Promise.all(
     (myCharacters ?? []).map(async (character) => {
-      const [fresh, freshEngraving] = await Promise.all([
+      const [{ combatPower: fresh, itemLevel: freshItemLevel }, freshEngraving] = await Promise.all([
         fetchCombatPower(character.name),
         fetchClassEngraving(character.name),
       ]);
       const shouldUpdate = fresh !== null && (character.combat_power === null || fresh > character.combat_power);
+      const shouldUpdateItemLevel =
+        freshItemLevel !== null && (character.item_level === null || freshItemLevel > character.item_level);
       // class_engraving을 한 번도 기록한 적 없는 캐릭터는(마이그레이션 전에 등록됐던 경우 등),
       // 전투력이 신기록이 아니어도 지금 값으로 최초 한 번은 채워준다 (그러지 않으면 영영 표시가 안 됨).
       const shouldBackfillEngraving = character.class_engraving === null && freshEngraving !== null;
-      if (shouldUpdate || shouldBackfillEngraving) {
+      if (shouldUpdate || shouldUpdateItemLevel || shouldBackfillEngraving) {
         const { error } = await supabase
           .from("characters")
           .update({
             ...(shouldUpdate ? { combat_power: fresh } : {}),
+            ...(shouldUpdateItemLevel ? { item_level: freshItemLevel } : {}),
             class_engraving: freshEngraving,
           })
           .eq("id", character.id);
@@ -139,6 +149,7 @@ export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
       return {
         characterId: character.id,
         combatPower: shouldUpdate ? fresh : character.combat_power,
+        itemLevel: shouldUpdateItemLevel ? freshItemLevel : character.item_level,
         classEngraving: shouldUpdate || shouldBackfillEngraving ? freshEngraving : character.class_engraving,
       };
     })
@@ -149,8 +160,9 @@ export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
   return results;
 }
 
-/** 실제로 장비를 빼거나 스펙이 다운된 경우, 예전에 기록된 "최고 전투력"이 더 이상 맞지 않을 수 있어서
- *  최댓값 비교 없이 내 캐릭터 전체를 현재 API 값(전투력+직업 각인)으로 강제로 덮어쓴다. */
+/** 실제로 장비를 빼거나 스펙이 다운된 경우, 예전에 기록된 "최고 전투력"/"최고 아이템 레벨"이 더 이상
+ *  맞지 않을 수 있어서 최댓값 비교 없이 내 캐릭터 전체를 현재 API 값(전투력+아이템 레벨+직업 각인)으로
+ *  강제로 덮어쓴다. */
 export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
   const { supabase, user } = await requireUser();
 
@@ -162,16 +174,16 @@ export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
 
   const results = await Promise.all(
     (myCharacters ?? []).map(async (character) => {
-      const [fresh, freshEngraving] = await Promise.all([
+      const [{ combatPower: fresh, itemLevel: freshItemLevel }, freshEngraving] = await Promise.all([
         fetchCombatPower(character.name),
         fetchClassEngraving(character.name),
       ]);
       const { error } = await supabase
         .from("characters")
-        .update({ combat_power: fresh, class_engraving: freshEngraving })
+        .update({ combat_power: fresh, item_level: freshItemLevel, class_engraving: freshEngraving })
         .eq("id", character.id);
       if (error) throw new Error(error.message);
-      return { characterId: character.id, combatPower: fresh, classEngraving: freshEngraving };
+      return { characterId: character.id, combatPower: fresh, itemLevel: freshItemLevel, classEngraving: freshEngraving };
     })
   );
 

@@ -145,7 +145,7 @@ export default function Dashboard({
 
   async function handleResetAllCombatPower() {
     const confirmed = window.confirm(
-      "내 캐릭터 전체의 저장된 최고 전투력 기록을 지우고, 지금 API 값으로 다시 맞출까요? (스펙이 실제로 다운됐을 때만 사용하세요)"
+      "내 캐릭터 전체의 저장된 최고 전투력·아이템 레벨 기록을 지우고, 지금 API 값으로 다시 맞출까요? (스펙이 실제로 다운됐을 때만 사용하세요)"
     );
     if (!confirmed) return;
     setCombatPowerBusy("reset");
@@ -475,19 +475,19 @@ export default function Dashboard({
               type="button"
               onClick={handleRefreshAllCombatPower}
               disabled={combatPowerBusy !== null}
-              title="레이드 세팅 기준 최고 전투력을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요. 3시간마다 자동으로도 갱신돼요."
+              title="레이드 세팅 기준 최고 전투력·아이템 레벨을 유지하기 위해, 새로 받은 값이 더 높을 때만 갱신돼요. 3시간마다 자동으로도 갱신돼요."
               className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
             >
-              {combatPowerBusy === "refresh" ? "전투력 갱신 중..." : "전투력 전체 갱신"}
+              {combatPowerBusy === "refresh" ? "전투력·레벨 갱신 중..." : "전투력·레벨 전체 갱신"}
             </button>
             <button
               type="button"
               onClick={handleResetAllCombatPower}
               disabled={combatPowerBusy !== null}
-              title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력 기록을 지금 값으로 강제로 맞춰요."
+              title="스펙이 실제로 다운됐을 때, 저장된 최고 전투력·아이템 레벨 기록을 지금 값으로 강제로 맞춰요."
               className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-red-300 hover:text-red-500 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-red-800 dark:hover:text-red-400"
             >
-              {combatPowerBusy === "reset" ? "초기화 중..." : "전투력 전체 초기화"}
+              {combatPowerBusy === "reset" ? "초기화 중..." : "전투력·레벨 전체 초기화"}
             </button>
           </div>
 
