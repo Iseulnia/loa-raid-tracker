@@ -200,11 +200,24 @@ function difficultyTextMatches(normalizedOcr: string, difficulty: string): boole
   return (DIFFICULTY_ALIASES[difficulty] ?? []).some((alias) => normalizedOcr.includes(alias));
 }
 
+// "성당"의 관문 클리어 제목은 앱에서 쓰는 짧은 이름이 아니라 "구원의 종탑"으로 뜬다(참여현황 패널의
+// "지평의 성당"과는 다른 화면·다른 표기라 PARTICIPATION_PANEL_SEARCH_TEXT와는 별개로 여기도 필요함).
+// 그 외 레이드는 결과화면 제목에 앱 이름이 그대로 포함돼 있어서 별도 별칭이 필요 없다.
+const RAID_NAME_ALIASES: Record<string, string[]> = {
+  성당: ["구원의종탑"],
+};
+
+function raidNameTextMatches(normalizedOcr: string, name: string): boolean {
+  if (normalizedOcr.includes(name)) return true;
+  return (RAID_NAME_ALIASES[name] ?? []).some((alias) => normalizedOcr.includes(alias));
+}
+
 /**
  * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드]" 등)와 레이드 목록을 비교해 어떤 레이드·난이도인지
  * 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은 픽셀 비교로 계속 헷갈렸는데,
  * 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도 둘 다 포함돼야 매칭으로 인정한다(하나만 맞으면
- * 오탐 가능성이 커서 일부러 엄격하게 함). 클리어 여부("나가기" 버튼)는 이 함수가 아니라 호출하는 쪽에서
+ * 오탐 가능성이 커서 일부러 엄격하게 함) — 이름은 `RAID_NAME_ALIASES`, 난이도는 `DIFFICULTY_ALIASES`로
+ * 앱 이름과 실제 화면 표기가 다른 경우도 같이 인정한다. 클리어 여부("나가기" 버튼)는 이 함수가 아니라 호출하는 쪽에서
  * `matchesClearButtonText`로 별도 확인한다 — 제목/난이도만으론 클리어 전후 구분이 안 되기 때문에
  * (레이드 진행 중에도 항상 떠 있는 텍스트라서) 반드시 같이 확인해야 한다.
  */
@@ -218,7 +231,7 @@ export function matchRaidFromText<T extends { id: string; name: string; difficul
   for (const r of raids) {
     const name = normalize(r.name);
     const difficulty = normalize(r.difficulty);
-    if (name && difficulty && normalizedOcr.includes(name) && difficultyTextMatches(normalizedOcr, difficulty)) {
+    if (name && difficulty && raidNameTextMatches(normalizedOcr, name) && difficultyTextMatches(normalizedOcr, difficulty)) {
       return r;
     }
   }
