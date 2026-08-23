@@ -159,6 +159,32 @@ function levenshtein(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
+function fuzzyThreshold(nameLength: number): number {
+  return Math.max(1, Math.ceil(nameLength * 0.34));
+}
+
+/** 서로 이름이 아주 비슷한 캐릭터들끼리는(예: 키츠네아/키츠녜아/키츄네아처럼 한두 글자만 다름) OCR이
+ *  한 글자만 잘못 읽어도 여러 후보가 동시에 "그럴듯하게" 가까워져서, 편집거리가 제일 작은 것 하나만 보고
+ *  확정하면 오히려 엉뚱한 캐릭터로 잘못 매칭될 위험이 크다(잘못된 캐릭터에 체크가 들어가는 건 자동 인식
+ *  실패보다 훨씬 나쁨). 그래서 내 캐릭터 목록 안에서 서로 fuzzy 매칭 기준으로 헷갈릴 만큼 가까운 이름들은
+ *  미리 찾아두고, 그런 이름들은 fuzzy 매칭 대상에서 아예 빼서 정확히 일치할 때만(아래 `contained` 체크)
+ *  인정하게 한다. 남과 안 헷갈리는 이름은 기존처럼 fuzzy 매칭을 그대로 적용한다. */
+function findConfusableNames(normalizedNames: string[]): Set<string> {
+  const confusable = new Set<string>();
+  for (let i = 0; i < normalizedNames.length; i++) {
+    for (let j = i + 1; j < normalizedNames.length; j++) {
+      const a = normalizedNames[i];
+      const b = normalizedNames[j];
+      if (!a || !b || a === b) continue;
+      if (levenshtein(a, b) <= fuzzyThreshold(Math.min(a.length, b.length))) {
+        confusable.add(a);
+        confusable.add(b);
+      }
+    }
+  }
+  return confusable;
+}
+
 /** OCR로 읽은 텍스트(레벨 등 잡음이 섞여 있어도 됨)와 내 캐릭터 이름 목록을 비교해 가장 가까운 캐릭터를 찾는다. */
 export function matchCharacterName<T extends { id: string; name: string }>(ocrText: string, characters: T[]): T | null {
   const normalizedOcr = normalize(ocrText);
@@ -167,15 +193,17 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
   const contained = characters.find((c) => normalizedOcr.includes(normalize(c.name)));
   if (contained) return contained;
 
+  const confusableNames = findConfusableNames(characters.map((c) => normalize(c.name)));
+
   let best: { character: T; dist: number } | null = null;
   for (const c of characters) {
     const name = normalize(c.name);
-    if (!name) continue;
+    if (!name || confusableNames.has(name)) continue;
     const dist = levenshtein(normalizedOcr, name);
     if (!best || dist < best.dist) best = { character: c, dist };
   }
   // 이름 길이 대비 편집거리가 너무 크면(전혀 다른 글자면) 매칭 포기
-  if (best && best.dist <= Math.max(1, Math.ceil(best.character.name.length * 0.34))) return best.character;
+  if (best && best.dist <= fuzzyThreshold(best.character.name.length)) return best.character;
   return null;
 }
 
