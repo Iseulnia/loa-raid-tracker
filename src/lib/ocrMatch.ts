@@ -56,19 +56,23 @@ function cropRegionForOcr(source: CanvasImageSource, sourceW: number, sourceH: n
   return canvas;
 }
 
+/**
+ * @param mode "line": 캐릭터 이름처럼 원래부터 한 줄인 텍스트(SINGLE_LINE — 여러 줄일 가능성이 없는
+ *   짧은 UI 라벨에선 이 모드가 더 정확함). "block"(기본값): 결과화면 텍스트처럼 레이드에 따라 두 줄로
+ *   나뉘거나 아이콘이 섞일 수 있는 크롭(SINGLE_BLOCK — 한 줄이든 여러 줄이든 무난하게 읽히지만, 진짜
+ *   한 줄짜리 짧은 텍스트에서는 SINGLE_LINE보다 살짝 부정확할 수 있음).
+ */
 export async function recognizeRegionText(
   source: CanvasImageSource,
   sourceW: number,
   sourceH: number,
-  crop: CropPct
+  crop: CropPct,
+  mode: "line" | "block" = "block"
 ): Promise<string> {
   const worker = await getWorker();
   const canvas = cropRegionForOcr(source, sourceW, sourceH, crop);
-  // 캐릭터 이름은 보통 한 줄이지만, 결과화면 텍스트는 레이드에 따라 "레이드명"과 "[난이도]"가 서로 다른
-  // 줄에 나오는 경우도 있어서(예: 세르카는 이름과 난이도가 2줄로 나뉨) "한 줄로 취급"하는 SINGLE_LINE은
-  // 이런 크롭에서 줄이 뒤섞이거나 글자가 깨질 수 있다. 대신 "하나의 균일한 텍스트 블록"으로 보는
-  // SINGLE_BLOCK을 쓰면 한 줄짜리 텍스트도 문제없이 읽히면서 여러 줄이 섞인 크롭에도 더 안정적이다.
-  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
+  const psm = mode === "line" ? Tesseract.PSM.SINGLE_LINE : Tesseract.PSM.SINGLE_BLOCK;
+  await worker.setParameters({ tessedit_pageseg_mode: psm });
   const { data } = await worker.recognize(canvas);
   return data.text.trim();
 }

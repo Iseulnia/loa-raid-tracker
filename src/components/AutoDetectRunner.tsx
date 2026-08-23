@@ -123,7 +123,7 @@ export default function AutoDetectRunner({
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, characterNameRegion);
+      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, characterNameRegion, "line");
       setLastCharacterOcrText(text);
       const matched = matchCharacterName(text, characters);
 

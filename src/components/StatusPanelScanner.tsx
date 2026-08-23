@@ -121,7 +121,7 @@ export default function StatusPanelScanner({
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, region.crop);
+      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, region.crop, "line");
       const matched = matchCharacterName(text, characters);
 
       if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
