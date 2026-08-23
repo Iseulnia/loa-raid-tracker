@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/characters", label: "내 캐릭터" },
   { href: "/auto-detect", label: "자동 감지" },
   { href: "/menu-detect", label: "메뉴 감지" },
+  { href: "/loa-tools", label: "로아 도구" },
 ];
 
 export default function NavLinks() {
