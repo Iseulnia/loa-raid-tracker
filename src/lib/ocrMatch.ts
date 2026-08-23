@@ -175,18 +175,25 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
   return null;
 }
 
+// 레이드 진행 중에도 레이드명·난이도 제목 표시줄은 계속 떠 있어서(클리어 전후 안 바뀜), 이름+난이도만
+// 읽히면 관문에 입장하자마자 바로 "클리어"로 오판하게 된다. 실제로 클리어했을 때만 바뀌는 건 그 아래
+// 버튼이 "나가기"로 바뀌는 것이라, 등록된 크롭에 그 버튼까지 포함시켜서 이 텍스트도 같이 잡히는 걸
+// 클리어의 필수 조건으로 둔다(사용자가 실제 게임 화면으로 확인해준 내용).
+const CLEAR_BUTTON_TEXT = normalize("나가기");
+
 /**
- * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드]" 등)와 레이드 목록을 비교해 어떤 레이드·난이도인지
- * 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은 픽셀 비교로 계속 헷갈렸는데,
- * 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도 둘 다 텍스트에 포함돼야 매칭으로 인정한다
- * (하나만 맞으면 오탐 가능성이 커서 일부러 엄격하게 함 — 못 찾으면 다음 프레임에 다시 시도하면 되므로).
+ * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드] ... 나가기" 등)와 레이드 목록을 비교해 어떤
+ * 레이드·난이도가 클리어됐는지 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은
+ * 픽셀 비교로 계속 헷갈렸는데, 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도, 그리고 "나가기"
+ * 버튼 텍스트까지 셋 다 포함돼야 매칭으로 인정한다(하나만 맞으면 오탐 가능성이 커서 일부러 엄격하게 함 —
+ * 못 찾으면 다음 프레임에 다시 시도하면 되므로).
  */
 export function matchRaidFromText<T extends { id: string; name: string; difficulty: string }>(
   ocrText: string,
   raids: T[]
 ): T | null {
   const normalizedOcr = normalize(ocrText);
-  if (!normalizedOcr) return null;
+  if (!normalizedOcr || !normalizedOcr.includes(CLEAR_BUTTON_TEXT)) return null;
 
   for (const r of raids) {
     const name = normalize(r.name);

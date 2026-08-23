@@ -43,9 +43,10 @@ export default async function AutoDetectPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
       <h1 className="mb-1 text-xl font-bold text-neutral-900 dark:text-neutral-100">자동 감지 (베타)</h1>
       <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-        화면공유로 라이브 화면을 보면서, 레이드 결과화면이 뜨면 그 자리 텍스트(레이드명+난이도)를 OCR로 읽어서
-        어떤 레이드인지 자동으로 인식·체크합니다. 오탐이 있을 수 있어서 자동 체크된 항목은 언제든 바로 취소할
-        수 있어요.
+        화면공유로 라이브 화면을 보면서, 관문 제목 표시줄의 레이드명+난이도와 하단 버튼이 &ldquo;나가기&rdquo;로
+        바뀐 것을 OCR로 함께 읽어서 클리어된 레이드를 자동으로 인식·체크합니다(레이드명+난이도는 입장 직후부터
+        항상 떠 있어서, 나가기 버튼까지 같이 읽혀야 클리어로 인정해요). 오탐이 있을 수 있어서 자동 체크된
+        항목은 언제든 바로 취소할 수 있어요.
       </p>
 
       <section className="mb-10">
@@ -62,10 +63,11 @@ export default async function AutoDetectPage() {
       <section>
         <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">기준 영역 등록</h2>
         <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          레이드 결과화면에서 레이드명과 난이도가 함께 보이는 텍스트 부분(예: &ldquo;종막 : 최후의 날
-          [하드]&rdquo;)을 한 번만 등록해두면 모든 레이드에 재사용돼요. 위치는 결과화면마다 항상 같은 자리라
-          다시 등록할 필요 없어요. 레이드 중 화면 우측 파티원 목록 맨 위(항상 내 캐릭터) 이름 위치도 등록해두면
-          캐릭터를 매번 직접 고르지 않아도 자동으로 인식돼요(선택 사항).
+          관문 제목 표시줄에서 레이드명·난이도와, 클리어하면 &ldquo;나가기&rdquo;로 바뀌는 하단 버튼까지
+          포함해서 한 번만 등록해두면 모든 레이드에 재사용돼요(레이드명·난이도만으론 입장 직후부터 항상
+          떠 있어서 클리어 여부를 구분 못 해요 — 나가기 버튼까지 같이 잡혀야 클리어로 인정돼요). 위치는
+          화면마다 항상 같은 자리라 다시 등록할 필요 없어요. 레이드 중 화면 우측 파티원 목록 맨 위(항상 내
+          캐릭터) 이름 위치도 등록해두면 캐릭터를 매번 직접 고르지 않아도 자동으로 인식돼요(선택 사항).
         </p>
         <ScreenCapture
           raids={raids ?? []}
