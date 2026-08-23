@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { recognizeRegionText, matchRaidFromText, matchCharacterName, type CropPct } from "@/lib/ocrMatch";
+import { recognizeRegionText, matchRaidFromText, matchCharacterName, matchesClearButtonText, type CropPct } from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
@@ -29,12 +29,16 @@ type OcrStatus = "idle" | "recognizing" | "matched" | "no-match";
 export default function AutoDetectRunner({
   characters,
   resultScreenOcrRegion,
+  clearButtonOcrRegion,
   characterNameRegion,
   raids,
   initialChecks,
 }: {
   characters: CharacterOption[];
   resultScreenOcrRegion: CropPct | null;
+  /** "나가기" 버튼 텍스트만 따로 좁게 등록한 영역 — 없으면 결과화면 영역 텍스트 안에서 "나가기"를 찾는
+   *  예전 방식으로 대체한다(하위 호환, 정확도는 따로 등록하는 쪽이 더 높음). */
+  clearButtonOcrRegion: CropPct | null;
   /** 레이드 중 화면 우측 파티원 목록 맨 위(항상 내 캐릭터) 이름 인식 영역 — 등록 안 해도 기존처럼 직접 고르면 됨. */
   characterNameRegion: CropPct | null;
   raids: RaidOption[];
@@ -193,6 +197,21 @@ export default function AutoDetectRunner({
         return;
       }
 
+      // "나가기" 버튼 전용 영역이 따로 등록돼 있으면 그걸로, 없으면 결과화면 텍스트 안에서 찾는 예전
+      // 방식으로 클리어 여부(오탐 방지)를 확인한다. 레이드명·난이도만으론 입장 직후부터 항상 떠 있어서
+      // 클리어 전후 구분이 안 되므로 반드시 필요함.
+      let cleared: boolean;
+      if (clearButtonOcrRegion) {
+        const buttonText = await recognizeRegionText(canvas, canvas.width, canvas.height, clearButtonOcrRegion);
+        cleared = matchesClearButtonText(buttonText);
+      } else {
+        cleared = matchesClearButtonText(text);
+      }
+      if (!cleared) {
+        pendingMatchRef.current = null;
+        return;
+      }
+
       const pending = pendingMatchRef.current;
       pendingMatchRef.current =
         pending && pending.raidId === matched.id ? { raidId: pending.raidId, count: pending.count + 1 } : { raidId: matched.id, count: 1 };
@@ -334,6 +353,21 @@ export default function AutoDetectRunner({
           >
             <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-emerald-500 px-1 text-[10px] font-medium text-white">
               결과화면 인식 영역
+            </span>
+          </div>
+        )}
+        {clearButtonOcrRegion && (
+          <div
+            className="pointer-events-none absolute border-2 border-amber-400"
+            style={{
+              left: `${clearButtonOcrRegion.xPct * 100}%`,
+              top: `${clearButtonOcrRegion.yPct * 100}%`,
+              width: `${clearButtonOcrRegion.wPct * 100}%`,
+              height: `${clearButtonOcrRegion.hPct * 100}%`,
+            }}
+          >
+            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-amber-500 px-1 text-[10px] font-medium text-white">
+              나가기 버튼 인식 영역
             </span>
           </div>
         )}

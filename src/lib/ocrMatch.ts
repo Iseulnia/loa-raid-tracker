@@ -177,9 +177,17 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
 
 // 레이드 진행 중에도 레이드명·난이도 제목 표시줄은 계속 떠 있어서(클리어 전후 안 바뀜), 이름+난이도만
 // 읽히면 관문에 입장하자마자 바로 "클리어"로 오판하게 된다. 실제로 클리어했을 때만 바뀌는 건 그 아래
-// 버튼이 "나가기"로 바뀌는 것이라, 등록된 크롭에 그 버튼까지 포함시켜서 이 텍스트도 같이 잡히는 걸
-// 클리어의 필수 조건으로 둔다(사용자가 실제 게임 화면으로 확인해준 내용).
+// 버튼이 "나가기"로 바뀌는 것이라, 이 텍스트가 같이 읽혀야 클리어로 인정한다(사용자가 실제 게임 화면으로
+// 확인해준 내용). 처음엔 제목+체크마크+버튼을 한 크롭에 다 넣고 그 안에서 이 텍스트를 찾았는데, 체크마크
+// 아이콘/버튼 테두리 같은 그래픽 요소가 같이 섞여 들어가면 OCR이 그 부분에서 자꾸 엉뚱한 글자를
+// 만들어내서(예: "나가기"가 "또칼^" 같은 걸로 깨짐) 버튼 텍스트만 따로 좁게 등록하는 것도 지원한다
+// (`matchesClearButtonText`).
 const CLEAR_BUTTON_TEXT = normalize("나가기");
+
+/** 버튼 영역 OCR 결과에 "나가기" 텍스트가 포함돼 있는지 확인한다 (별도로 좁게 등록한 크롭용). */
+export function matchesClearButtonText(ocrText: string): boolean {
+  return normalize(ocrText).includes(CLEAR_BUTTON_TEXT);
+}
 
 // 일부 레이드는 화면에 난이도가 "노말"이 아니라 "싱글 모드"로 표시되는데(사용자 확인: 컨텐츠 자체는
 // 노말과 동일), DB의 난이도 값은 그대로 "노말"이라 OCR 텍스트만 별칭으로 같이 인정해준다.
@@ -193,18 +201,19 @@ function difficultyTextMatches(normalizedOcr: string, difficulty: string): boole
 }
 
 /**
- * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드] ... 나가기" 등)와 레이드 목록을 비교해 어떤
- * 레이드·난이도가 클리어됐는지 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은
- * 픽셀 비교로 계속 헷갈렸는데, 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도, 그리고 "나가기"
- * 버튼 텍스트까지 셋 다 포함돼야 매칭으로 인정한다(하나만 맞으면 오탐 가능성이 커서 일부러 엄격하게 함 —
- * 못 찾으면 다음 프레임에 다시 시도하면 되므로).
+ * 결과화면에서 OCR로 읽은 텍스트("종막 : 최후의 날 [하드]" 등)와 레이드 목록을 비교해 어떤 레이드·난이도인지
+ * 찾는다. 벨가르딘 나이트메어와 종막 하드처럼 배경/체크마크가 비슷한 화면은 픽셀 비교로 계속 헷갈렸는데,
+ * 실제 글자를 읽으면 훨씬 정확하다. 레이드 이름과 난이도 둘 다 포함돼야 매칭으로 인정한다(하나만 맞으면
+ * 오탐 가능성이 커서 일부러 엄격하게 함). 클리어 여부("나가기" 버튼)는 이 함수가 아니라 호출하는 쪽에서
+ * `matchesClearButtonText`로 별도 확인한다 — 제목/난이도만으론 클리어 전후 구분이 안 되기 때문에
+ * (레이드 진행 중에도 항상 떠 있는 텍스트라서) 반드시 같이 확인해야 한다.
  */
 export function matchRaidFromText<T extends { id: string; name: string; difficulty: string }>(
   ocrText: string,
   raids: T[]
 ): T | null {
   const normalizedOcr = normalize(ocrText);
-  if (!normalizedOcr || !normalizedOcr.includes(CLEAR_BUTTON_TEXT)) return null;
+  if (!normalizedOcr) return null;
 
   for (const r of raids) {
     const name = normalize(r.name);

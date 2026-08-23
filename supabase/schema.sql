@@ -111,7 +111,7 @@ create table if not exists public.raid_clear_templates (
   template_type text not null default 'result_screen'
     check (template_type in (
       'clear_banner', 'result_screen', 'gate_checkmark', 'status_row', 'character_name',
-      'result_screen_ocr', 'participation_panel_ocr', 'party_top_name_ocr'
+      'result_screen_ocr', 'participation_panel_ocr', 'party_top_name_ocr', 'clear_button_ocr'
     )),
   crop jsonb, -- 캡처한 원본 프레임 대비 상대 위치 {xPct,yPct,wPct,hPct} (0~1)
   raid_label text, -- 'status_row' 전용: 난이도 무관 레이드 이름 (예: "벨가르딘"), raid_id 대신 이걸로 매칭
