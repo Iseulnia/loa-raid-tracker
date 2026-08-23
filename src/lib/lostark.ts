@@ -111,3 +111,52 @@ export async function fetchClassEngraving(characterName: string): Promise<string
 export function parseFormattedNumber(value: string): number {
   return Number(value.replace(/,/g, "")) || 0;
 }
+
+export type MarketItem = {
+  Id: number;
+  Name: string;
+  Grade: string;
+  BundleCount: number; // 묶음 거래 수량(예: 100). CurrentMinPrice는 1개가 아니라 이 묶음 전체 가격이다.
+  CurrentMinPrice: number;
+  YDayAvgPrice: number;
+  RecentPrice: number;
+};
+
+/** 거래소 카테고리 하나(예: 재련 재료=50010)의 아이템을 전부 가져온다. 이름 검색(ItemName)은 완전
+ *  일치라 이름이 조금만 달라도 못 찾기 쉬워서, 카테고리 전체를 가져와 Id로 매칭하는 쪽이 안전하다
+ *  (재련 재료 카테고리는 30여 개뿐이라 페이지 몇 장으로 끝남). */
+export async function searchMarketItemsByCategory(categoryCode: number): Promise<MarketItem[]> {
+  const items: MarketItem[] = [];
+  let pageNo = 1;
+  for (let i = 0; i < 20; i++) {
+    const res = await fetch(`${BASE_URL}/markets/items`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getApiKey()}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        Sort: "CURRENT_MIN_PRICE",
+        CategoryCode: categoryCode,
+        PageNo: pageNo,
+        SortCondition: "ASC",
+      }),
+      cache: "no-store",
+    });
+
+    if (res.status === 401) {
+      throw new LostArkApiError("API 키가 올바르지 않거나 만료됐어요.", 401);
+    }
+    if (!res.ok) {
+      throw new LostArkApiError(`로스트아크 거래소 API 호출 실패 (status ${res.status})`, res.status);
+    }
+
+    const data = (await res.json()) as { Items: MarketItem[] | null; TotalCount: number };
+    const pageItems = data.Items ?? [];
+    items.push(...pageItems);
+    if (pageItems.length === 0 || items.length >= data.TotalCount) break;
+    pageNo += 1;
+  }
+  return items;
+}

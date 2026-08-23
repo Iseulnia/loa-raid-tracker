@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AuctionBidCalculator from "@/components/AuctionBidCalculator";
+import MoreRewardsEfficiency from "@/components/MoreRewardsEfficiency";
 
 const TABS = [
   { key: "auction", label: "경매 계산기" },
@@ -49,7 +50,11 @@ export default function LoaToolsTabs() {
       {tab === "moreRewards" && (
         <section>
           <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">더보기 효율</h2>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">준비 중이에요. 곧 추가할게요.</p>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            관문별 더보기(추가 보상 구매)에 필요한 골드와, 실시간 거래소 시세로 환산한 보상 가치를 비교해서
+            이득/손해를 보여줘요. &ldquo;현재가 갱신&rdquo;을 눌러야 최신 시세로 계산돼요.
+          </p>
+          <MoreRewardsEfficiency />
         </section>
       )}
     </div>
