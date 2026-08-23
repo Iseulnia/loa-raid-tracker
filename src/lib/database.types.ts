@@ -178,6 +178,26 @@ export type Database = {
           },
         ];
       };
+      market_item_prices: {
+        Row: {
+          item_id: number;
+          item_name: string;
+          current_min_price: number;
+          bundle_count: number;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          item_id: number;
+          item_name: string;
+          current_min_price: number;
+          bundle_count: number;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["market_item_prices"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

@@ -543,11 +543,19 @@
   실제로 쓰인(제일 싼) 주머니에 초록 배지로 "계산에 사용" 표시를 추가함.
 - **관문 행 클릭 시 재료별 상세 내역**: 레이드 표의 각 관문 행을 클릭하면 그 아래로 재료별(필요 개수·단가·
   구매 시 가격) 내역이 펼쳐짐 — 보상 환산가 합계가 어떻게 나온 건지 재료 단위로 뜯어볼 수 있게 함.
-- **시세 localStorage 저장**: 새로고침할 때마다 갱신 버튼을 다시 눌러야 하는 게 불편하다는 피드백으로,
-  갱신 버튼을 눌러 받아온 시세+시각을 `localStorage`에 저장해두고 마운트 시 그대로 복원함(자동으로 API를
-  다시 호출하지는 않음 — 매 방문마다 호출하지 않으려는 의도 유지, 최신화는 여전히 수동 갱신 버튼으로만).
-  마운트 시 저장값을 한 번만 읽어와 세팅하는 부분은 `ThemeToggle`과 동일하게 서버 렌더링과의 하이드레이션
-  불일치를 피하려고 effect 안에서 처리하고 `react-hooks/set-state-in-effect` 룰을 의도적으로 비활성화함.
+- **시세를 localStorage 대신 DB에 저장(공유 캐시)로 변경**: 처음엔 브라우저 localStorage에 저장했는데,
+  그러면 친구마다 각자 갱신 버튼을 눌러야 하는 게 그대로 남는다는 지적을 받고 DB 캐시로 바꿈. 새 테이블
+  `market_item_prices`(item_id PK, current_min_price, bundle_count, updated_by, updated_at)를 만들고
+  `raids` 테이블과 같은 "로그인한 사람이면 전원 읽기/쓰기 가능" RLS 정책을 적용함(신뢰된 소규모 친구
+  그룹이라 소유권 구분 없이 공용 데이터로 취급 — `raids_write_all`과 동일 패턴).
+  `/api/lostark/market` 라우트를 GET(DB에서 저장된 시세만 읽음, 로스트아크 API 호출 없음 — 페이지 마운트
+  시 자동으로 불러도 부담 없음)과 POST(로스트아크 API를 실제로 호출해서 DB에 upsert, "현재가 갱신" 버튼
+  전용)로 분리함. 한 명이 갱신하면 그 결과가 DB에 남아서 다른 친구들은 페이지만 열어도 바로 보임.
+  **DB 스키마 변경 있음 — `migration_2026-08-24_market_item_prices.sql`을 Supabase SQL Editor에서 실행
+  필요**(schema.sql에도 반영해둠, 새로 세팅하는 경우 대비).
+  - `src/lib/database.types.ts`에 `market_item_prices` 테이블 타입 추가 안 하면 `.from("market_item_prices")`
+    가 `never` 타입으로 추론돼서 빌드가 깨짐 — Supabase 타입이 자동 생성이 아니라 수동 관리라 새 테이블을
+    쓰려면 항상 이 파일도 같이 고쳐야 함.
 
 ## 새 세션에서 작업 재개할 때 체크리스트
 

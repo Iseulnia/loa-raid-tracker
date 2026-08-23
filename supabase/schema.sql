@@ -144,6 +144,19 @@ create table if not exists public.weekly_checks (
 create index if not exists weekly_checks_week_key_idx on public.weekly_checks (week_key);
 create index if not exists characters_owner_idx on public.characters (owner_id);
 
+-- ─────────────────────────────────────────────
+-- 4-1. market_item_prices: 로아 도구 > 더보기 효율의 거래소 시세 캐시.
+--    한 명이 "현재가 갱신"을 누르면 저장된 값을 모두가 그대로 보게 해서, 각자 API를 따로 부르지 않게 함.
+-- ─────────────────────────────────────────────
+create table if not exists public.market_item_prices (
+  item_id bigint primary key,
+  item_name text not null,
+  current_min_price numeric not null,
+  bundle_count int not null,
+  updated_by uuid references public.profiles (id),
+  updated_at timestamptz not null default now()
+);
+
 -- 실시간 DELETE 이벤트에 삭제된 행의 전체 컬럼이 실려오게 함 (기본값은 PK만 전달되어
 -- 다른 친구 화면에서 체크 해제가 실시간으로 반영되지 않는 문제가 생김)
 alter table public.weekly_checks replica identity full;
@@ -159,6 +172,7 @@ alter table public.raids enable row level security;
 alter table public.character_raids enable row level security;
 alter table public.raid_clear_templates enable row level security;
 alter table public.weekly_checks enable row level security;
+alter table public.market_item_prices enable row level security;
 
 create policy "profiles_select_all" on public.profiles
   for select using (auth.role() = 'authenticated');
@@ -240,6 +254,11 @@ create policy "checks_update_own_character" on public.weekly_checks
       where c.id = character_id and c.owner_id = auth.uid()
     )
   );
+
+create policy "market_item_prices_select_all" on public.market_item_prices
+  for select using (auth.role() = 'authenticated');
+create policy "market_item_prices_write_all" on public.market_item_prices
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────────
 -- 6. 실시간 브로드캐스트 활성화 (체크하면 다른 친구 화면에도 바로 반영)
