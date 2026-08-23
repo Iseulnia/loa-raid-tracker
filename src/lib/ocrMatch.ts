@@ -58,27 +58,99 @@ function enhanceContrast(canvas: HTMLCanvasElement) {
 const MIN_OCR_WIDTH_PX = 400;
 const MIN_OCR_HEIGHT_PX = 100;
 
-/** 프레임에서 crop 영역만 잘라, 작은 글자도 잘 읽히도록 확대 + 대비 강화해서 캔버스로 만든다. */
-function cropRegionForOcr(source: CanvasImageSource, sourceW: number, sourceH: number, crop: CropPct): HTMLCanvasElement {
+/** 캔버스 안에서 배경과 뚜렷이 다른("잉크") 픽셀만 찾아 그 부분만 감싸는 사각형으로 잘라낸다. 긴 닉네임도
+ *  담을 수 있도록 일부러 넓게 등록한 캐릭터 이름 크롭은, 실제 이름이 짧을 때 오른쪽에 남는 빈 여백이나
+ *  다른 UI 요소가 그대로 같이 확대되면서 정작 글자의 실효 해상도를 깎아먹는다. 배경 값은 전체 픽셀 중
+ *  가장 흔한 밝기(히스토그램 최빈값)로 추정한다 — 크롭 대부분은 배경이고 글자는 소수라 이 값이 배경에
+ *  가장 안정적으로 수렴한다. 잉크가 하나도 안 잡히면(전부 배경) 원본을 그대로 돌려준다. */
+function trimToInk(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const { width, height } = canvas;
+  if (width < 4 || height < 4) return canvas;
+  const ctx = canvas.getContext("2d")!;
+  const { data } = ctx.getImageData(0, 0, width, height);
+
+  const BUCKETS = 32;
+  const hist = new Array(BUCKETS).fill(0);
+  for (let i = 0; i < data.length; i += 4) {
+    hist[Math.min(BUCKETS - 1, Math.floor((data[i] / 256) * BUCKETS))]++;
+  }
+  const bgBucket = hist.indexOf(Math.max(...hist));
+  const bg = (bgBucket + 0.5) * (256 / BUCKETS);
+  const INK_THRESHOLD = 45;
+
+  let minX = width;
+  let maxX = -1;
+  let minY = height;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const v = data[(y * width + x) * 4];
+      if (Math.abs(v - bg) > INK_THRESHOLD) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return canvas;
+
+  // 글자 획이 잘리지 않도록 살짝 여백을 남긴다(세로는 자음/모음 위아래로 더 여유 있게).
+  const padX = Math.max(2, Math.round((maxX - minX) * 0.06));
+  const padY = Math.max(2, Math.round((maxY - minY) * 0.25));
+  const cropX = Math.max(0, minX - padX);
+  const cropY = Math.max(0, minY - padY);
+  const cropW = Math.min(width, maxX + padX + 1) - cropX;
+  const cropH = Math.min(height, maxY + padY + 1) - cropY;
+  if (cropW < 2 || cropH < 2) return canvas;
+
+  const trimmed = document.createElement("canvas");
+  trimmed.width = cropW;
+  trimmed.height = cropH;
+  trimmed.getContext("2d")!.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+  return trimmed;
+}
+
+/** 프레임에서 crop 영역만 잘라, 작은 글자도 잘 읽히도록 확대 + 대비 강화해서 캔버스로 만든다.
+ *  mode "line"(캐릭터 이름)은 대비 강화 후 실제 글자가 있는 부분만 자동으로 좁혀서(`trimToInk`) 그
+ *  부분을 기준으로 확대 배율을 계산한다 — 긴 닉네임을 담으려고 넓게 등록한 크롭이어도, 짧은 이름일 때
+ *  남는 빈 공간이 확대 배율을 갉아먹지 않게 하기 위함. mode "block"(결과화면 등)은 위치가 항상 일정하고
+ *  둘째 줄(난이도)까지 걸쳐 있을 수 있어 자동으로 좁히면 오히려 위험해서 트리밍 없이 크롭 전체를 쓴다. */
+function cropRegionForOcr(
+  source: CanvasImageSource,
+  sourceW: number,
+  sourceH: number,
+  crop: CropPct,
+  mode: "line" | "block" = "block"
+): HTMLCanvasElement {
   const sw = crop.wPct * sourceW;
   const sh = crop.hPct * sourceH;
-  const scale = Math.max(1, MIN_OCR_WIDTH_PX / sw, MIN_OCR_HEIGHT_PX / sh);
+
+  const rawCanvas = document.createElement("canvas");
+  rawCanvas.width = Math.max(1, Math.round(sw));
+  rawCanvas.height = Math.max(1, Math.round(sh));
+  const rawCtx = rawCanvas.getContext("2d")!;
+  rawCtx.drawImage(source, crop.xPct * sourceW, crop.yPct * sourceH, sw, sh, 0, 0, rawCanvas.width, rawCanvas.height);
+  enhanceContrast(rawCanvas);
+
+  const trimmed = mode === "line" ? trimToInk(rawCanvas) : rawCanvas;
+
+  const scale = Math.max(1, MIN_OCR_WIDTH_PX / trimmed.width, MIN_OCR_HEIGHT_PX / trimmed.height);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(sw * scale);
-  canvas.height = Math.round(sh * scale);
+  canvas.width = Math.round(trimmed.width * scale);
+  canvas.height = Math.round(trimmed.height * scale);
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, crop.xPct * sourceW, crop.yPct * sourceH, sw, sh, 0, 0, canvas.width, canvas.height);
-  enhanceContrast(canvas);
+  ctx.drawImage(trimmed, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
 /**
  * @param mode "line": 캐릭터 이름처럼 원래부터 한 줄인 텍스트(SINGLE_LINE — 여러 줄일 가능성이 없는
- *   짧은 UI 라벨에선 이 모드가 더 정확함). "block"(기본값): 결과화면 텍스트처럼 레이드에 따라 두 줄로
- *   나뉘거나 아이콘이 섞일 수 있는 크롭(SINGLE_BLOCK — 한 줄이든 여러 줄이든 무난하게 읽히지만, 진짜
- *   한 줄짜리 짧은 텍스트에서는 SINGLE_LINE보다 살짝 부정확할 수 있음).
+ *   짧은 UI 라벨에선 이 모드가 더 정확함, 실제 글자 부분만 자동으로 좁혀서 확대함). "block"(기본값):
+ *   결과화면 텍스트처럼 레이드에 따라 두 줄로 나뉘거나 아이콘이 섞일 수 있는 크롭(SINGLE_BLOCK — 한 줄이든
+ *   여러 줄이든 무난하게 읽히지만, 진짜 한 줄짜리 짧은 텍스트에서는 SINGLE_LINE보다 살짝 부정확할 수 있음).
  */
 export async function recognizeRegionText(
   source: CanvasImageSource,
@@ -88,7 +160,7 @@ export async function recognizeRegionText(
   mode: "line" | "block" = "block"
 ): Promise<string> {
   const worker = await getWorker();
-  const canvas = cropRegionForOcr(source, sourceW, sourceH, crop);
+  const canvas = cropRegionForOcr(source, sourceW, sourceH, crop, mode);
   const psm = mode === "line" ? Tesseract.PSM.SINGLE_LINE : Tesseract.PSM.SINGLE_BLOCK;
   await worker.setParameters({ tessedit_pageseg_mode: psm });
   const { data } = await worker.recognize(canvas);
