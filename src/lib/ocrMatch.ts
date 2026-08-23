@@ -18,11 +18,23 @@ export const SCREEN_CAPTURE_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
 };
 
 let workerPromise: Promise<Tesseract.Worker> | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+// 워커를 켜둔 채로 방치하면(자동 감지/메뉴 감지 탭을 한 번이라도 켰다가 다른 탭으로 옮기거나 화면공유를
+// 꺼도) WASM 워커가 브라우저 탭이 살아있는 내내 메모리에 남는다. 일정 시간 인식 요청이 없으면 종료해서
+// 메모리를 돌려주고, 다음에 다시 필요해지면 그때 새로 띄운다(재초기화 몇 초는 감수).
+const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 function getWorker(): Promise<Tesseract.Worker> {
   if (!workerPromise) {
     workerPromise = Tesseract.createWorker("kor");
   }
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    const toTerminate = workerPromise;
+    workerPromise = null;
+    idleTimer = null;
+    toTerminate?.then((w) => w.terminate()).catch(() => {});
+  }, WORKER_IDLE_TIMEOUT_MS);
   return workerPromise;
 }
 

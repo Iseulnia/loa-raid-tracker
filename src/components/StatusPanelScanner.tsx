@@ -120,14 +120,9 @@ export default function StatusPanelScanner({
 
     setOcrStatus("recognizing");
     try {
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const text = await recognizeRegionText(canvas, canvas.width, canvas.height, region.crop, "line");
+      // video를 바로 넘기면 크롭 영역 크기만큼만 그려지므로(recognizeRegionText 내부에서), 4K 프레임
+      // 전체를 매 틱마다 캔버스에 복사하는 불필요한 비용을 없앨 수 있다.
+      const text = await recognizeRegionText(video, video.videoWidth, video.videoHeight, region.crop, "line");
       const matched = matchCharacterName(text, characters);
 
       if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시

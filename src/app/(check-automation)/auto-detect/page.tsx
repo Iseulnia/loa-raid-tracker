@@ -26,12 +26,15 @@ export default async function AutoDetectPage() {
     supabase.from("weekly_checks").select("character_id, raid_id").eq("week_key", weekKey),
   ]);
 
-  const templatesWithUrls = await Promise.all(
-    (templates ?? []).map(async (t) => {
-      const { data } = await supabase.storage.from("raid-clear-templates").createSignedUrl(t.storage_path, 600);
-      return { ...t, url: data?.signedUrl ?? null };
-    })
-  );
+  // 템플릿마다 서명 URL을 따로 요청하지 않고 한 번에 묶어서 요청한다(등록된 기준 영역이 여러 개일 때
+  // 요청 수를 템플릿 개수만큼이 아니라 1번으로 줄임).
+  const templatePaths = (templates ?? []).map((t) => t.storage_path);
+  const { data: signedUrls } =
+    templatePaths.length > 0
+      ? await supabase.storage.from("raid-clear-templates").createSignedUrls(templatePaths, 600)
+      : { data: null };
+  const urlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
+  const templatesWithUrls = (templates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
 
   // 위치가 고정이라(스크롤 없음) 내가 등록한 것 하나만 있으면 됨 — 다른 사람 화면 배치/해상도가 다를 수
   // 있어서 반드시 내가 등록한 것만 쓴다 (raid_clear_templates는 RLS상 다른 사람 것도 보이는 테이블이라서).
