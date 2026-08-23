@@ -46,6 +46,65 @@ type CheckRow = {
   checked_by: string;
 };
 type CharacterRaidRow = { character_id: string; raid_id: string; is_gold_earning: boolean };
+type RaidStatusEntry = {
+  raidName: string;
+  difficulties: { difficulty: string; sortOrder: number; done: number; total: number }[];
+  tradeable: number;
+  bound: number;
+  everTradeable: number;
+  everBound: number;
+};
+
+/** 레이드별 현황 카드 — 공격대 탭에서는 사람별로(접었다 펴는 영역 안에) 하나씩, 대시보드 탭에서는 나만
+ *  하나 뜬다. 어느 쪽이든 렌더링 방식은 같아서 컴포넌트로 분리해뒀다. */
+function RaidStatusByNameCard({ title, entries }: { title: string; entries: RaidStatusEntry[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <h3 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">{title}</h3>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {entries.map(({ raidName, difficulties, tradeable, bound, everTradeable, everBound }) => (
+          <div
+            key={raidName}
+            className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-800/50"
+          >
+            <div className="mb-1.5 font-medium text-neutral-700 dark:text-neutral-300">{raidName}</div>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {difficulties.map((d) => {
+                const complete = d.done >= d.total;
+                return (
+                  <span
+                    key={d.difficulty}
+                    className="flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <span className={difficultyColorClass(d.difficulty)}>{d.difficulty}</span>
+                    <span className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
+                      {d.done}/{d.total}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+            {(everTradeable > 0 || everBound > 0) && (
+              <div className="flex items-center justify-between border-t border-neutral-200 pt-1.5 dark:border-neutral-700">
+                <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
+                <span className="flex items-center gap-1">
+                  {everTradeable > 0 && (
+                    <AnimatedNumber value={tradeable} format={(n) => `${n.toLocaleString()}G`} className="text-amber-600 dark:text-amber-400" />
+                  )}
+                  {everTradeable > 0 && everBound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
+                  {everBound > 0 && (
+                    <AnimatedNumber value={bound} format={(n) => `${n.toLocaleString()}G`} className="text-indigo-600 dark:text-indigo-400" />
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
@@ -366,10 +425,10 @@ export default function Dashboard({
     return map;
   }, [raids]);
 
-  // 로그인한 사람 기준 "내 캐릭터 전체"에서 레이드 이름별로, 그 안의 난이도별 클리어한 캐릭터 수/전체 수와
+  // 사람별로(공격대 탭에서는 나뿐 아니라 친구별로도) 레이드 이름별 난이도별 클리어한 캐릭터 수/전체 수와
   // (골드 받기로 고른 것만) 그 레이드 이름에서 "아직 클리어 안 해서 앞으로 받을 수 있는" 골드 합계.
   // 클리어한 것까지 합치면 체크를 해도 숫자가 그대로라 확인하는 의미가 없어서, 남은(미클리어) 것만 더한다.
-  const myRaidStatusByName = useMemo(() => {
+  const raidStatusByNameByOwner = useMemo(() => {
     type DifficultyStatus = { difficulty: string; sortOrder: number; done: number; total: number };
     type Entry = {
       difficulties: Map<string, DifficultyStatus>;
@@ -381,12 +440,12 @@ export default function Dashboard({
       everTradeable: number;
       everBound: number;
     };
-    const map = new Map<string, Entry>();
+    const byOwner = new Map<string, Map<string, Entry>>();
     for (const character of characters) {
-      if (character.owner_id !== currentUserId) continue;
+      const ownerMap = byOwner.get(character.owner_id) ?? new Map<string, Entry>();
       const goldEarningIds = goldEarningRaidIdsFor(character);
       for (const raid of selectedRaidsFor(character)) {
-        const entry = map.get(raid.name) ?? { difficulties: new Map(), tradeable: 0, bound: 0, everTradeable: 0, everBound: 0 };
+        const entry = ownerMap.get(raid.name) ?? { difficulties: new Map(), tradeable: 0, bound: 0, everTradeable: 0, everBound: 0 };
         const diffEntry = entry.difficulties.get(raid.difficulty) ?? {
           difficulty: raid.difficulty,
           sortOrder: raid.sort_order,
@@ -407,21 +466,28 @@ export default function Dashboard({
             entry.bound += split.bound;
           }
         }
-        map.set(raid.name, entry);
+        ownerMap.set(raid.name, entry);
       }
+      byOwner.set(character.owner_id, ownerMap);
     }
-    return Array.from(map.entries())
-      .map(([raidName, v]) => ({
-        raidName,
-        difficulties: Array.from(v.difficulties.values()).sort((a, b) => a.sortOrder - b.sortOrder),
-        tradeable: v.tradeable,
-        bound: v.bound,
-        everTradeable: v.everTradeable,
-        everBound: v.everBound,
-      }))
-      .sort((a, b) => (raidNameOrder.get(a.raidName) ?? 0) - (raidNameOrder.get(b.raidName) ?? 0));
+
+    const result = new Map<string, RaidStatusEntry[]>();
+    for (const [ownerId, ownerMap] of byOwner) {
+      const list = Array.from(ownerMap.entries())
+        .map(([raidName, v]) => ({
+          raidName,
+          difficulties: Array.from(v.difficulties.values()).sort((a, b) => a.sortOrder - b.sortOrder),
+          tradeable: v.tradeable,
+          bound: v.bound,
+          everTradeable: v.everTradeable,
+          everBound: v.everBound,
+        }))
+        .sort((a, b) => (raidNameOrder.get(a.raidName) ?? 0) - (raidNameOrder.get(b.raidName) ?? 0));
+      result.set(ownerId, list);
+    }
+    return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characters, characterRaidMap, checkedSet, currentUserId, raidNameOrder]);
+  }, [characters, characterRaidMap, checkedSet, raidNameOrder]);
 
   function percentOf(earned: number, total: number): number {
     if (total <= 0) return 0;
@@ -544,52 +610,6 @@ export default function Dashboard({
         </>
       )}
 
-      {myRaidStatusByName.length > 0 && (
-        <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <h2 className="mb-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400">내 레이드별 현황</h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {myRaidStatusByName.map(({ raidName, difficulties, tradeable, bound, everTradeable, everBound }) => (
-              <div
-                key={raidName}
-                className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs dark:border-neutral-800 dark:bg-neutral-800/50"
-              >
-                <div className="mb-1.5 font-medium text-neutral-700 dark:text-neutral-300">{raidName}</div>
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {difficulties.map((d) => {
-                    const complete = d.done >= d.total;
-                    return (
-                      <span
-                        key={d.difficulty}
-                        className="flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-900"
-                      >
-                        <span className={difficultyColorClass(d.difficulty)}>{d.difficulty}</span>
-                        <span className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
-                          {d.done}/{d.total}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </div>
-                {(everTradeable > 0 || everBound > 0) && (
-                  <div className="flex items-center justify-between border-t border-neutral-200 pt-1.5 dark:border-neutral-700">
-                    <span className="text-neutral-400 dark:text-neutral-400">받을 수 있는 골드</span>
-                    <span className="flex items-center gap-1">
-                      {everTradeable > 0 && (
-                        <AnimatedNumber value={tradeable} format={(n) => `${n.toLocaleString()}G`} className="text-amber-600 dark:text-amber-400" />
-                      )}
-                      {everTradeable > 0 && everBound > 0 && <span className="text-neutral-300 dark:text-neutral-500">/</span>}
-                      {everBound > 0 && (
-                        <AnimatedNumber value={bound} format={(n) => `${n.toLocaleString()}G`} className="text-indigo-600 dark:text-indigo-400" />
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {visibleProfiles
         .filter((p) => charactersByOwner.has(p.id))
         .map((profile) => (
@@ -622,6 +642,12 @@ export default function Dashboard({
               </button>
             ) : (
               <h2 className="mb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">{profile.nickname}</h2>
+            )}
+            {!collapsedProfiles.has(profile.id) && (
+              <RaidStatusByNameCard
+                title={profile.id === currentUserId ? "내 레이드별 현황" : `${profile.nickname}의 레이드별 현황`}
+                entries={raidStatusByNameByOwner.get(profile.id) ?? []}
+              />
             )}
             {!collapsedProfiles.has(profile.id) &&
               groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
