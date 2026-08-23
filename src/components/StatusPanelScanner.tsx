@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { recognizeRegionText, recognizeParticipationPanel, matchCharacterName, type CropPct } from "@/lib/ocrMatch";
+import {
+  recognizeRegionText,
+  recognizeParticipationPanel,
+  matchCharacterName,
+  SCREEN_CAPTURE_VIDEO_CONSTRAINTS,
+  type CropPct,
+} from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string };
@@ -152,7 +158,7 @@ export default function StatusPanelScanner({
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: SCREEN_CAPTURE_VIDEO_CONSTRAINTS, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;

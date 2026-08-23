@@ -6,6 +6,17 @@ import Tesseract from "tesseract.js";
 
 export type CropPct = { xPct: number; yPct: number; wPct: number; hPct: number };
 
+/** getDisplayMedia에 넘기는 video 제약 조건. 브라우저는 화면공유를 인코딩할 때 대역폭을 아끼려고 프레임을
+ *  압축하는데, OCR은 어차피 몇 초에 한 번만 프레임을 읽으면 되니 프레임레이트를 낮게 요청하면 인코더가
+ *  프레임 하나에 더 많은 비트를 쓸 수 있어서 캐릭터 이름 같은 작은 글자가 더 또렷하게 잡힌다. 해상도도
+ *  명시적으로 높게 요청해서 브라우저가 임의로 다운스케일하지 않도록 한다. 화면공유/기준 영역 등록/자동
+ *  감지/메뉴 감지가 전부 같은 값을 쓰도록 여기 한 곳에서만 관리한다. */
+export const SCREEN_CAPTURE_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 3840 },
+  height: { ideal: 2160 },
+  frameRate: { ideal: 5, max: 10 },
+};
+
 let workerPromise: Promise<Tesseract.Worker> | null = null;
 
 function getWorker(): Promise<Tesseract.Worker> {

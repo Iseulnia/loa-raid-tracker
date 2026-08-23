@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { saveRaidClearTemplate, deleteRaidClearTemplate, type TemplateType } from "@/app/actions";
+import { SCREEN_CAPTURE_VIDEO_CONSTRAINTS } from "@/lib/ocrMatch";
 
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
 type CharacterOption = { id: string; name: string };
@@ -91,7 +92,7 @@ export default function ScreenCapture({
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: SCREEN_CAPTURE_VIDEO_CONSTRAINTS, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;

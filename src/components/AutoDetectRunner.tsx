@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { setRaidCheck } from "@/app/actions";
-import { recognizeRegionText, matchRaidFromText, matchCharacterName, matchesClearButtonText, type CropPct } from "@/lib/ocrMatch";
+import {
+  recognizeRegionText,
+  matchRaidFromText,
+  matchCharacterName,
+  matchesClearButtonText,
+  SCREEN_CAPTURE_VIDEO_CONSTRAINTS,
+  type CropPct,
+} from "@/lib/ocrMatch";
 
 type CharacterOption = { id: string; name: string; item_level: number | null };
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
@@ -156,7 +163,7 @@ export default function AutoDetectRunner({
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: SCREEN_CAPTURE_VIDEO_CONSTRAINTS, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
