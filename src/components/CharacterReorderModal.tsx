@@ -56,8 +56,17 @@ export default function CharacterReorderModal({
   // 옮겨두고, 다음 프레임에 트랜지션을 걸어서 제자리로 돌아오게 한다.
   const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const prevRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const rafIdRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
+    // 직전 순서 변경에서 예약해둔 rAF가 아직 안 끝난 채로 다음 순서 변경이 들어오면, 그 오래된 콜백이
+    // 이번에 새로 건 트랜지션/transform을 나중에 덮어써서 애니메이션이 두 번 재생되는 것처럼 보였다.
+    // 새로 예약하기 전에 이전 예약을 취소해서 항상 가장 최근 것 하나만 실행되게 한다.
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+
     // 드래그 중엔 dragover가 아주 빠르게 여러 번 발생해서, 이전 순서 변경의 200ms 트랜지션이 채 안 끝난
     // 채로 다음 순서 변경이 들어오는 경우가 흔하다. 그 상태에서 그냥 getBoundingClientRect를 재면 트랜지션
     // 도중의 어중간한 위치를 "지금 자리"로 잘못 측정하게 돼서 델타 계산이 틀어지고, 그 결과 애니메이션이
@@ -83,7 +92,8 @@ export default function CharacterReorderModal({
       el.getBoundingClientRect(); // 강제 리플로우 — 트랜지션을 걸기 전에 지금 transform이 먼저 반영되게 함
     });
 
-    requestAnimationFrame(() => {
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
       itemRefs.current.forEach((el) => {
         el.style.transition = "transform 200ms ease";
         el.style.transform = "";
