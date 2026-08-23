@@ -65,6 +65,7 @@ export default function AutoDetectRunner({
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
   const [autoDetectedCharacterId, setAutoDetectedCharacterId] = useState<string | null>(null);
   const [characterOcrStatus, setCharacterOcrStatus] = useState<OcrStatus>("idle");
+  const [lastCharacterOcrText, setLastCharacterOcrText] = useState("");
   useEffect(() => {
     selectedCharacterIdRef.current = selectedCharacterId;
   }, [selectedCharacterId]);
@@ -103,6 +104,7 @@ export default function AutoDetectRunner({
     characterLockedRef.current = false;
     setAutoDetectedCharacterId(null);
     setCharacterOcrStatus("idle");
+    setLastCharacterOcrText("");
   }
 
   /** 파티원 목록 맨 위 캐릭터 이름을 읽어서 selectedCharacterIdRef를 최신으로 맞춘다. runScan()의 맨 앞에서
@@ -122,6 +124,7 @@ export default function AutoDetectRunner({
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const text = await recognizeRegionText(canvas, canvas.width, canvas.height, characterNameRegion);
+      setLastCharacterOcrText(text);
       const matched = matchCharacterName(text, characters);
 
       if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
@@ -306,7 +309,10 @@ export default function AutoDetectRunner({
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {/* 버튼들이 항상 같은 위치에 있도록, 폭이 수시로 바뀌는 상태 표시(뱃지/인식 텍스트)는 전부 별도 줄로
+          뺐다 — 원래 한 줄에 같이 있을 때는 "자동 인식 실패" 같은 문구가 나타났다 사라졌다 하면서 그 뒤에
+          있던 중지 버튼이 좌우로 밀려서 클릭하기 어려운 문제가 있었음. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <select
           value={selectedCharacterId}
           onChange={(e) => selectCharacterManually(e.target.value)}
@@ -319,17 +325,6 @@ export default function AutoDetectRunner({
             </option>
           ))}
         </select>
-        {autoDetectedCharacterId === selectedCharacterId && (
-          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
-            OCR로 자동 인식됨
-          </span>
-        )}
-        {sharing && characterOcrStatus === "recognizing" && (
-          <span className="text-xs text-neutral-400 dark:text-neutral-400">캐릭터 이름 인식 중...</span>
-        )}
-        {sharing && characterOcrStatus === "no-match" && (
-          <span className="text-xs text-neutral-400 dark:text-neutral-400">자동 인식 실패 — 직접 선택해주세요</span>
-        )}
         {sharing && characterNameRegion && (
           <button
             type="button"
@@ -359,9 +354,27 @@ export default function AutoDetectRunner({
             중지
           </button>
         )}
-
-        <span className="text-sm text-neutral-500 dark:text-neutral-400">{statusText}</span>
       </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-neutral-500 dark:text-neutral-400">{statusText}</span>
+        {autoDetectedCharacterId === selectedCharacterId && (
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
+            OCR로 자동 인식됨
+          </span>
+        )}
+        {sharing && characterOcrStatus === "recognizing" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">캐릭터 이름 인식 중...</span>
+        )}
+        {sharing && characterOcrStatus === "no-match" && (
+          <span className="text-xs text-neutral-400 dark:text-neutral-400">자동 인식 실패 — 직접 선택해주세요</span>
+        )}
+      </div>
+      {characterNameRegion && lastCharacterOcrText && sharing && (
+        <p className="mb-2 text-xs text-neutral-400 dark:text-neutral-400">
+          캐릭터 이름 인식 텍스트: {lastCharacterOcrText}
+        </p>
+      )}
 
       {!resultScreenOcrRegion && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
