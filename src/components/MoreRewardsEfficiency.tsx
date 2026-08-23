@@ -1,15 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   MATERIAL_ITEMS,
   FRAGMENT_POUCHES,
   MORE_REWARD_GATES,
   type MaterialKey,
+  type MoreRewardGate,
 } from "@/lib/moreRewards";
 
 type PriceInfo = { currentMinPrice: number; bundleCount: number };
 type PriceMap = Record<number, PriceInfo>;
+
+// 100개 묶음으로 거래되는 재료는 인게임 거래소 표시와 똑같이 "100개당 가격"을 그대로 보여준다
+// (개당으로 쪼개서 보여주면 오히려 게임 화면이랑 비교하기 불편해서).
+const BUNDLE_100_KEYS: MaterialKey[] = ["destructionStone", "guardianStone", "destructionCrystal", "guardianCrystal"];
+const SINGLE_KEYS: MaterialKey[] = ["breakthroughStone", "greatBreakthroughStone"];
 
 function unitPriceOf(prices: PriceMap, marketItemId: number): number | null {
   const p = prices[marketItemId];
@@ -17,11 +23,16 @@ function unitPriceOf(prices: PriceMap, marketItemId: number): number | null {
   return p.currentMinPrice / p.bundleCount;
 }
 
+function gateKeyOf(g: MoreRewardGate): string {
+  return `${g.raid}-${g.difficulty}-${g.gate}`;
+}
+
 export default function MoreRewardsEfficiency() {
   const [prices, setPrices] = useState<PriceMap | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   async function refreshPrices() {
     setLoading(true);
@@ -42,12 +53,12 @@ export default function MoreRewardsEfficiency() {
   // 파편은 그 자체로 안 팔리고 주머니로만 팔리므로, 소/중/대 중 개당 단가가 제일 싼 주머니를 기준으로 삼는다.
   const cheapestFragmentPouch = useMemo(() => {
     if (!prices) return null;
-    let best: { name: string; unitPrice: number } | null = null;
+    let best: { pouch: (typeof FRAGMENT_POUCHES)[number]; unitPrice: number } | null = null;
     for (const pouch of FRAGMENT_POUCHES) {
       const p = prices[pouch.marketItemId];
       if (!p) continue;
       const per = p.currentMinPrice / pouch.fragmentsPerPouch;
-      if (!best || per < best.unitPrice) best = { name: pouch.name, unitPrice: per };
+      if (!best || per < best.unitPrice) best = { pouch, unitPrice: per };
     }
     return best;
   }, [prices]);
@@ -61,6 +72,23 @@ export default function MoreRewardsEfficiency() {
       total += amount * per;
     }
     return total;
+  }
+
+  function materialBreakdown(g: MoreRewardGate) {
+    const rows: { name: string; amount: number; unitPrice: number | null; subtotal: number | null }[] = [];
+    for (const [key, amount] of Object.entries(g.materials) as [MaterialKey, number][]) {
+      const meta = MATERIAL_ITEMS[key];
+      const per = prices ? unitPriceOf(prices, meta.marketItemId) : null;
+      rows.push({ name: meta.name, amount, unitPrice: per, subtotal: per == null ? null : per * amount });
+    }
+    const fragPer = cheapestFragmentPouch?.unitPrice ?? null;
+    rows.push({
+      name: cheapestFragmentPouch ? `운명의 파편 (${cheapestFragmentPouch.pouch.name} 기준)` : "운명의 파편",
+      amount: g.fragment,
+      unitPrice: fragPer,
+      subtotal: fragPer == null ? null : fragPer * g.fragment,
+    });
+    return rows;
   }
 
   const raidOrder = useMemo(() => {
@@ -102,28 +130,57 @@ export default function MoreRewardsEfficiency() {
 
         {prices && (
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {(Object.keys(MATERIAL_ITEMS) as MaterialKey[]).map((key) => {
+            {BUNDLE_100_KEYS.map((key) => {
               const meta = MATERIAL_ITEMS[key];
-              const per = unitPriceOf(prices, meta.marketItemId);
+              const price = prices[meta.marketItemId]?.currentMinPrice ?? null;
               return (
                 <div key={key} className="rounded-md bg-neutral-50 px-3 py-2 dark:bg-neutral-800/60">
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{meta.name}</p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{meta.name} (100개당)</p>
                   <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
-                    {per == null ? "-" : `${per.toLocaleString(undefined, { maximumFractionDigits: 2 })}G`}
+                    {price == null ? "-" : `${price.toLocaleString()}G`}
                   </p>
                 </div>
               );
             })}
-            <div className="rounded-md bg-neutral-50 px-3 py-2 dark:bg-neutral-800/60">
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                운명의 파편 (개당, {cheapestFragmentPouch?.name ?? "-"} 기준)
-              </p>
-              <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
-                {cheapestFragmentPouch == null
-                  ? "-"
-                  : `${cheapestFragmentPouch.unitPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}G`}
-              </p>
-            </div>
+            {SINGLE_KEYS.map((key) => {
+              const meta = MATERIAL_ITEMS[key];
+              const price = prices[meta.marketItemId]?.currentMinPrice ?? null;
+              return (
+                <div key={key} className="rounded-md bg-neutral-50 px-3 py-2 dark:bg-neutral-800/60">
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{meta.name} (개당)</p>
+                  <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
+                    {price == null ? "-" : `${price.toLocaleString()}G`}
+                  </p>
+                </div>
+              );
+            })}
+            {FRAGMENT_POUCHES.map((pouch) => {
+              const price = prices[pouch.marketItemId]?.currentMinPrice ?? null;
+              const inUse = cheapestFragmentPouch?.pouch.marketItemId === pouch.marketItemId;
+              return (
+                <div
+                  key={pouch.marketItemId}
+                  className={[
+                    "rounded-md px-3 py-2",
+                    inUse
+                      ? "bg-emerald-50 ring-1 ring-inset ring-emerald-300 dark:bg-emerald-950 dark:ring-emerald-800"
+                      : "bg-neutral-50 dark:bg-neutral-800/60",
+                  ].join(" ")}
+                >
+                  <p className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    {pouch.name}
+                    {inUse && (
+                      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                        계산에 사용
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
+                    {price == null ? "-" : `${price.toLocaleString()}G`}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -144,34 +201,75 @@ export default function MoreRewardsEfficiency() {
               </thead>
               <tbody>
                 {MORE_REWARD_GATES.filter((g) => g.raid === raid).map((g) => {
+                  const key = gateKeyOf(g);
+                  const expanded = expandedKey === key;
                   const value = gateValue(g.materials, g.fragment);
                   const diff = value == null ? null : Math.round(value) - g.gold;
                   return (
-                    <tr key={`${g.raid}-${g.difficulty}-${g.gate}`} className="border-b border-neutral-100 last:border-0 dark:border-neutral-800/60">
-                      <td className="py-1.5 pr-3 text-neutral-600 dark:text-neutral-300">{g.difficulty}</td>
-                      <td className="py-1.5 pr-3 text-neutral-600 dark:text-neutral-300">{g.gate}</td>
-                      <td className="py-1.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">{g.gold.toLocaleString()}G</td>
-                      <td className="py-1.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">
-                        {value == null ? "-" : `${Math.round(value).toLocaleString()}G`}
-                      </td>
-                      <td className="py-1.5">
-                        {diff == null ? (
-                          <span className="text-xs text-neutral-400 dark:text-neutral-500">가격 갱신 필요</span>
-                        ) : diff > 0 ? (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-                            이득 +{diff.toLocaleString()}G
-                          </span>
-                        ) : diff < 0 ? (
-                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-                            손해 {diff.toLocaleString()}G
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                            본전
-                          </span>
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={key}>
+                      <tr
+                        onClick={() => setExpandedKey(expanded ? null : key)}
+                        className="cursor-pointer border-b border-neutral-100 last:border-0 hover:bg-neutral-50 dark:border-neutral-800/60 dark:hover:bg-neutral-800/40"
+                      >
+                        <td className="py-1.5 pr-3 text-neutral-600 dark:text-neutral-300">{g.difficulty}</td>
+                        <td className="py-1.5 pr-3 text-neutral-600 dark:text-neutral-300">{g.gate}</td>
+                        <td className="py-1.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">{g.gold.toLocaleString()}G</td>
+                        <td className="py-1.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">
+                          {value == null ? "-" : `${Math.round(value).toLocaleString()}G`}
+                        </td>
+                        <td className="py-1.5">
+                          {diff == null ? (
+                            <span className="text-xs text-neutral-400 dark:text-neutral-500">가격 갱신 필요</span>
+                          ) : diff > 0 ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                              이득 +{diff.toLocaleString()}G
+                            </span>
+                          ) : diff < 0 ? (
+                            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                              손해 {diff.toLocaleString()}G
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                              본전
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr key={`${key}-detail`} className="border-b border-neutral-100 dark:border-neutral-800/60">
+                          <td colSpan={5} className="bg-neutral-50 px-3 py-3 dark:bg-neutral-800/40">
+                            <table className="w-full border-collapse text-xs">
+                              <thead>
+                                <tr className="text-left text-neutral-400 dark:text-neutral-500">
+                                  <th className="pb-1 pr-3 font-medium">재료</th>
+                                  <th className="pb-1 pr-3 font-medium">필요 개수</th>
+                                  <th className="pb-1 pr-3 font-medium">단가</th>
+                                  <th className="pb-1 font-medium">구매 시 가격</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {materialBreakdown(g).map((row) => (
+                                  <tr key={row.name}>
+                                    <td className="py-0.5 pr-3 text-neutral-600 dark:text-neutral-300">{row.name}</td>
+                                    <td className="py-0.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">
+                                      {row.amount.toLocaleString()}개
+                                    </td>
+                                    <td className="py-0.5 pr-3 tabular-nums text-neutral-600 dark:text-neutral-300">
+                                      {row.unitPrice == null
+                                        ? "-"
+                                        : `${row.unitPrice.toLocaleString(undefined, { maximumFractionDigits: 3 })}G`}
+                                    </td>
+                                    <td className="py-0.5 tabular-nums text-neutral-600 dark:text-neutral-300">
+                                      {row.subtotal == null ? "-" : `${Math.round(row.subtotal).toLocaleString()}G`}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
