@@ -55,9 +55,22 @@ type RaidStatusEntry = {
   everBound: number;
 };
 
+type DifficultyFilter = { raidName: string; difficulty: string };
+
 /** 레이드별 현황 카드 — 공격대 탭에서는 사람별로(접었다 펴는 영역 안에) 하나씩, 대시보드 탭에서는 나만
- *  하나 뜬다. 어느 쪽이든 렌더링 방식은 같아서 컴포넌트로 분리해뒀다. */
-function RaidStatusByNameCard({ title, entries }: { title: string; entries: RaidStatusEntry[] }) {
+ *  하나 뜬다. 어느 쪽이든 렌더링 방식은 같아서 컴포넌트로 분리해뒀다. 난이도 배지를 누르면 그 아래 캐릭터
+ *  목록이 그 레이드+난이도를 가는 캐릭터만 남도록 필터링된다(같은 배지를 다시 누르면 해제). */
+function RaidStatusByNameCard({
+  title,
+  entries,
+  activeFilter,
+  onToggleDifficulty,
+}: {
+  title: string;
+  entries: RaidStatusEntry[];
+  activeFilter: DifficultyFilter | null;
+  onToggleDifficulty: (raidName: string, difficulty: string) => void;
+}) {
   if (entries.length === 0) return null;
   return (
     <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
@@ -72,16 +85,35 @@ function RaidStatusByNameCard({ title, entries }: { title: string; entries: Raid
             <div className="mb-2 flex flex-wrap gap-1.5">
               {difficulties.map((d) => {
                 const complete = d.done >= d.total;
+                const active = activeFilter?.raidName === raidName && activeFilter?.difficulty === d.difficulty;
                 return (
-                  <span
+                  <button
                     key={d.difficulty}
-                    className="flex items-center gap-1 rounded border border-neutral-200 bg-white px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-900"
+                    type="button"
+                    onClick={() => onToggleDifficulty(raidName, d.difficulty)}
+                    title={active ? "눌러서 전체 캐릭터 보기" : `눌러서 ${raidName} ${d.difficulty} 가는 캐릭터만 보기`}
+                    className={[
+                      "flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors",
+                      active
+                        ? "border-neutral-900 bg-neutral-900 dark:border-neutral-100 dark:bg-neutral-100"
+                        : "border-neutral-200 bg-white hover:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-500",
+                    ].join(" ")}
                   >
-                    <span className={difficultyColorClass(d.difficulty)}>{d.difficulty}</span>
-                    <span className={complete ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-500 dark:text-neutral-400"}>
+                    <span className={active ? "text-white dark:text-neutral-900" : difficultyColorClass(d.difficulty)}>
+                      {d.difficulty}
+                    </span>
+                    <span
+                      className={
+                        active
+                          ? "text-white dark:text-neutral-900"
+                          : complete
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-neutral-500 dark:text-neutral-400"
+                      }
+                    >
                       {d.done}/{d.total}
                     </span>
-                  </span>
+                  </button>
                 );
               })}
             </div>
@@ -157,7 +189,31 @@ export default function Dashboard({
   const [reordering, setReordering] = useState(false);
   const [collapsedProfiles, setCollapsedProfiles] = useState<Set<string>>(new Set());
   const [combatPowerBusy, setCombatPowerBusy] = useState<"refresh" | "reset" | null>(null);
+  // 레이드별 현황 카드에서 난이도 배지를 누르면 그 사람의 캐릭터 목록이 해당 레이드+난이도를 가는
+  // 캐릭터만 보이게 필터링된다. 사람(profile)별로 독립적으로 필터를 걸 수 있어서 profileId로 구분해둔다.
+  const [difficultyFilterByProfile, setDifficultyFilterByProfile] = useState<Map<string, DifficultyFilter>>(new Map());
   const router = useRouter();
+
+  function toggleDifficultyFilter(profileId: string, raidName: string, difficulty: string) {
+    setDifficultyFilterByProfile((prev) => {
+      const next = new Map(prev);
+      const current = next.get(profileId);
+      if (current && current.raidName === raidName && current.difficulty === difficulty) {
+        next.delete(profileId); // 같은 배지를 다시 누르면 필터 해제 — 전체 캐릭터로 복귀
+      } else {
+        next.set(profileId, { raidName, difficulty });
+      }
+      return next;
+    });
+  }
+
+  function clearDifficultyFilter(profileId: string) {
+    setDifficultyFilterByProfile((prev) => {
+      const next = new Map(prev);
+      next.delete(profileId);
+      return next;
+    });
+  }
 
   async function handleRefreshAllCombatPower() {
     setCombatPowerBusy("refresh");
@@ -647,10 +703,31 @@ export default function Dashboard({
               <RaidStatusByNameCard
                 title={profile.id === currentUserId ? "내 레이드별 현황" : `${profile.nickname}의 레이드별 현황`}
                 entries={raidStatusByNameByOwner.get(profile.id) ?? []}
+                activeFilter={difficultyFilterByProfile.get(profile.id) ?? null}
+                onToggleDifficulty={(raidName, difficulty) => toggleDifficultyFilter(profile.id, raidName, difficulty)}
               />
             )}
+            {!collapsedProfiles.has(profile.id) && difficultyFilterByProfile.has(profile.id) && (
+              <button
+                type="button"
+                onClick={() => clearDifficultyFilter(profile.id)}
+                className="mb-2 text-xs text-neutral-400 underline hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200"
+              >
+                {difficultyFilterByProfile.get(profile.id)!.raidName} {difficultyFilterByProfile.get(profile.id)!.difficulty}{" "}
+                가는 캐릭터만 보는 중 · 전체 캐릭터 보기
+              </button>
+            )}
             {!collapsedProfiles.has(profile.id) &&
-              groupByExpedition(charactersByOwner.get(profile.id)!).map((group, groupIndex, allGroups) => (
+              groupByExpedition(
+                (() => {
+                  const filter = difficultyFilterByProfile.get(profile.id);
+                  const profileCharacters = charactersByOwner.get(profile.id)!;
+                  if (!filter) return profileCharacters;
+                  return profileCharacters.filter((c) =>
+                    selectedRaidsFor(c).some((r) => r.name === filter.raidName && r.difficulty === filter.difficulty)
+                  );
+                })()
+              ).map((group, groupIndex, allGroups) => (
               <div key={group.label ?? "__unassigned"} className={groupIndex > 0 ? "mt-4" : ""}>
                 {(group.label || allGroups.length > 1) && (
                   <div className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-neutral-400">
