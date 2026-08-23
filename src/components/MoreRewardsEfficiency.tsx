@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   MATERIAL_ITEMS,
   FRAGMENT_POUCHES,
@@ -27,12 +27,31 @@ function gateKeyOf(g: MoreRewardGate): string {
   return `${g.raid}-${g.difficulty}-${g.gate}`;
 }
 
+// 새로고침할 때마다 다시 갱신 버튼을 누르지 않아도 되도록, 불러온 시세를 브라우저에 저장해뒀다가
+// 다음 방문에서도 그대로 보여준다(값 자체는 갱신 버튼을 눌러야만 최신화됨 — 매 방문마다 API를 호출하지
+// 않기 위해 자동 조회는 안 함).
+const STORAGE_KEY = "loa-tools:more-rewards-prices:v1";
+
 export default function MoreRewardsEfficiency() {
   const [prices, setPrices] = useState<PriceMap | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { prices: PriceMap; updatedAt: string };
+      // 마운트 시점에 저장된 값을 한 번만 읽어와 서버 렌더링과의 하이드레이션 불일치를 피하는 의도된 패턴.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrices(parsed.prices);
+      setUpdatedAt(new Date(parsed.updatedAt));
+    } catch {
+      // 저장된 값이 깨졌거나 localStorage를 쓸 수 없는 환경 — 조용히 무시(갱신 버튼으로 새로 받으면 됨)
+    }
+  }, []);
 
   async function refreshPrices() {
     setLoading(true);
@@ -41,8 +60,14 @@ export default function MoreRewardsEfficiency() {
       const res = await fetch("/api/lostark/market");
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "가격을 불러오지 못했어요.");
+      const now = new Date();
       setPrices(data.prices as PriceMap);
-      setUpdatedAt(new Date());
+      setUpdatedAt(now);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ prices: data.prices, updatedAt: now.toISOString() }));
+      } catch {
+        // 저장 용량 초과 등으로 실패해도 화면에 보여주는 데는 지장 없음 — 조용히 무시
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "알 수 없는 오류가 발생했어요.");
     } finally {
