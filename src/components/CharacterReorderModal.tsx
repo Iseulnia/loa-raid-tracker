@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { reorderCharacters } from "@/app/actions";
 
 type CharacterOption = {
@@ -12,6 +12,11 @@ type CharacterOption = {
 
 type Group = { label: string | null; characters: CharacterOption[] };
 
+/** 대시보드에 뜨는 순서와 다르게 보이면 헷갈린다는 피드백이 있어서, 여기서 별도로 다시 정렬하지 않고
+ *  (예전엔 원정대 라벨 알파벳순으로 다시 정렬해서 대시보드와 순서가 달랐음) 이미 sort_order로 정렬돼서
+ *  들어오는 characters 배열을 순서 그대로 순회하며 그룹만 나눈다 — 원정대 그룹 순서는 자연히 "그 안에서
+ *  가장 먼저 나오는(=sort_order가 가장 작은) 캐릭터" 기준이 되어 대시보드의 groupByExpedition과 동일한
+ *  결과가 된다. 원정대 미지정(null) 그룹만 대시보드와 동일하게 항상 맨 뒤로 보낸다. */
 function buildGroups(characters: CharacterOption[]): Group[] {
   const map = new Map<string, CharacterOption[]>();
   for (const c of characters) {
@@ -20,13 +25,13 @@ function buildGroups(characters: CharacterOption[]): Group[] {
     list.push(c);
     map.set(key, list);
   }
-  return Array.from(map.entries())
-    .map(([key, chars]) => ({ label: key === "" ? null : key, characters: chars }))
-    .sort((a, b) => {
-      const labelA = a.label ?? "￿";
-      const labelB = b.label ?? "￿";
-      return labelA.localeCompare(labelB);
-    });
+  const groups = Array.from(map.entries()).map(([key, chars]) => ({
+    label: key === "" ? null : key,
+    characters: chars,
+  }));
+  const assigned = groups.filter((g) => g.label !== null);
+  const unassigned = groups.filter((g) => g.label === null);
+  return [...assigned, ...unassigned];
 }
 
 export default function CharacterReorderModal({
@@ -45,6 +50,35 @@ export default function CharacterReorderModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dragRef = useRef<{ groupIndex: number; itemIndex: number } | null>(null);
+
+  // 네이티브 HTML5 드래그는 목록 순서가 바뀔 때마다 항목이 순간이동하듯 툭툭 끊겨 보여서, FLIP 기법으로
+  // 부드럽게 밀리는 것처럼 보이게 한다: 순서가 바뀐 직후 각 항목을 "바뀌기 전 위치"로 즉시(트랜지션 없이)
+  // 옮겨두고, 다음 프레임에 트랜지션을 걸어서 제자리로 돌아오게 한다.
+  const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+  const prevRectsRef = useRef<Map<string, DOMRect>>(new Map());
+
+  useLayoutEffect(() => {
+    const nextRects = new Map<string, DOMRect>();
+    itemRefs.current.forEach((el, id) => {
+      nextRects.set(id, el.getBoundingClientRect());
+    });
+
+    itemRefs.current.forEach((el, id) => {
+      const prev = prevRectsRef.current.get(id);
+      const next = nextRects.get(id);
+      if (!prev || !next) return;
+      const deltaY = prev.top - next.top;
+      if (deltaY === 0) return;
+      el.style.transition = "none";
+      el.style.transform = `translateY(${deltaY}px)`;
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 200ms ease";
+        el.style.transform = "";
+      });
+    });
+
+    prevRectsRef.current = nextRects;
+  }, [groups]);
 
   function moveGroup(groupIndex: number, direction: -1 | 1) {
     setGroups((prev) => {
@@ -140,6 +174,10 @@ export default function CharacterReorderModal({
                 {group.characters.map((c, itemIndex) => (
                   <li
                     key={c.id}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(c.id, el);
+                      else itemRefs.current.delete(c.id);
+                    }}
                     draggable
                     onDragStart={() => handleDragStart(groupIndex, itemIndex)}
                     onDragOver={(e) => handleDragOver(e, groupIndex, itemIndex)}
