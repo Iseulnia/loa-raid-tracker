@@ -360,12 +360,46 @@ export default function StatusPanelScanner({
       )}
       {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        className={["w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800", scanning ? "" : "hidden"].join(" ")}
-      />
+      <div className={["relative", scanning ? "" : "hidden"].join(" ")}>
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className="w-full rounded-md border border-neutral-200 bg-neutral-900 dark:border-neutral-800"
+        />
+        {/* 지금 OCR이 실제로 보고 있는 영역이 화면 어디인지 눈으로 바로 확인할 수 있도록 겹쳐 그린다 —
+            등록한 크롭이 실제 게임 화면 요소와 안 맞아도 여기서 바로 티가 나서 디버깅하기 쉬워짐. */}
+        {panelRegion && (
+          <div
+            className="pointer-events-none absolute border-2 border-emerald-400"
+            style={{
+              left: `${panelRegion.xPct * 100}%`,
+              top: `${panelRegion.yPct * 100}%`,
+              width: `${panelRegion.wPct * 100}%`,
+              height: `${panelRegion.hPct * 100}%`,
+            }}
+          >
+            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-emerald-500 px-1 text-[10px] font-medium text-white">
+              참여현황 패널 인식 영역
+            </span>
+          </div>
+        )}
+        {characterNameRegions[0] && (
+          <div
+            className="pointer-events-none absolute border-2 border-sky-400"
+            style={{
+              left: `${characterNameRegions[0].crop.xPct * 100}%`,
+              top: `${characterNameRegions[0].crop.yPct * 100}%`,
+              width: `${characterNameRegions[0].crop.wPct * 100}%`,
+              height: `${characterNameRegions[0].crop.hPct * 100}%`,
+            }}
+          >
+            <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-sky-500 px-1 text-[10px] font-medium text-white">
+              캐릭터 이름 인식 영역
+            </span>
+          </div>
+        )}
+      </div>
       <canvas ref={canvasRef} className="hidden" />
 
       {found.length > 0 && (
