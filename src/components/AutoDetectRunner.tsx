@@ -209,6 +209,17 @@ export default function AutoDetectRunner({
       const text = await recognizeRegionText(canvas, canvas.width, canvas.height, resultScreenOcrRegion);
       setLastOcrText(text);
 
+      // "나가기" 버튼 전용 영역이 따로 등록돼 있으면 항상 같이 읽어서 보여준다 — 레이드 매칭 성공 여부와
+      // 상관없이(추적 안 하는 컨텐츠를 하고 있어도) 지금 이 영역이 뭘로 읽히는지 바로 확인할 수 있게
+      // 하기 위함. 매칭에 실패해서 아래에서 바로 return해도 이 디버그 표시는 이미 갱신된 상태.
+      let buttonText: string | null = null;
+      if (clearButtonOcrRegion) {
+        buttonText = await recognizeRegionText(canvas, canvas.width, canvas.height, clearButtonOcrRegion);
+        setLastClearButtonOcrText(buttonText);
+      } else {
+        setLastClearButtonOcrText(null); // 별도 영역이 없으면 결과화면 텍스트 안에서 찾으므로 따로 보여줄 게 없음
+      }
+
       const matched = matchRaidFromText(text, raids);
 
       if (!matched) {
@@ -216,18 +227,9 @@ export default function AutoDetectRunner({
         return;
       }
 
-      // "나가기" 버튼 전용 영역이 따로 등록돼 있으면 그걸로, 없으면 결과화면 텍스트 안에서 찾는 예전
-      // 방식으로 클리어 여부(오탐 방지)를 확인한다. 레이드명·난이도만으론 입장 직후부터 항상 떠 있어서
-      // 클리어 전후 구분이 안 되므로 반드시 필요함.
-      let cleared: boolean;
-      if (clearButtonOcrRegion) {
-        const buttonText = await recognizeRegionText(canvas, canvas.width, canvas.height, clearButtonOcrRegion);
-        setLastClearButtonOcrText(buttonText);
-        cleared = matchesClearButtonText(buttonText);
-      } else {
-        setLastClearButtonOcrText(null); // 별도 영역이 없으면 결과화면 텍스트 안에서 찾으므로 따로 보여줄 게 없음
-        cleared = matchesClearButtonText(text);
-      }
+      // 레이드명·난이도만으론 입장 직후부터 항상 떠 있어서 클리어 전후 구분이 안 되므로, "나가기" 버튼
+      // 텍스트까지 확인돼야 클리어로 인정한다(오탐 방지).
+      const cleared = clearButtonOcrRegion ? matchesClearButtonText(buttonText ?? "") : matchesClearButtonText(text);
       if (!cleared) {
         pendingMatchRef.current = null;
         return;
