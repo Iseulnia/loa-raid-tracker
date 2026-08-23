@@ -195,8 +195,13 @@ export function matchesClearButtonText(ocrText: string): boolean {
 
 // 일부 레이드는 화면에 난이도가 "노말"이 아니라 "싱글 모드"로 표시되는데(사용자 확인: 컨텐츠 자체는
 // 노말과 동일), DB의 난이도 값은 그대로 "노말"이라 OCR 텍스트만 별칭으로 같이 인정해준다.
+// "하드"는 실제 표기가 아니라 OCR이 자주 "하트"로 잘못 읽는 문제라(ㄷ/ㅌ이 흐릿하면 헷갈리기 쉬움) 같이
+// 별칭 처리한다 — 다른 난이도(노말/나이트메어/1~3단계)와는 글자가 충분히 달라서 오탐 위험이 낮다. 다만
+// 성당의 1단계/2단계/3단계처럼 숫자 하나 차이인 값들에는 이런 "비슷한 글자 허용" 방식을 넓게 적용하면
+// 서로 잘못 매칭될 위험이 있어서, 여기서는 흔한 오독 패턴만 콕 집어 별칭으로 추가하는 방식을 유지한다.
 const DIFFICULTY_ALIASES: Record<string, string[]> = {
   노말: ["싱글모드"],
+  하드: ["하트"],
 };
 
 function difficultyTextMatches(normalizedOcr: string, difficulty: string): boolean {
