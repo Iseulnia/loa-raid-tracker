@@ -107,10 +107,21 @@ export default function CharacterReorderModal({
     dragRef.current = { groupIndex, itemIndex };
   }
 
-  function handleDragOver(e: React.DragEvent, groupIndex: number, itemIndex: number) {
+  function handleDragOver(e: React.DragEvent<HTMLLIElement>, groupIndex: number, itemIndex: number) {
     e.preventDefault();
     const drag = dragRef.current;
     if (!drag || drag.groupIndex !== groupIndex || drag.itemIndex === itemIndex) return;
+
+    // 대상 항목에 살짝만 걸쳐도 바로 자리를 바꾸면, 바뀌는 순간 그 자리에 있던 항목이 커서 밑으로 오면서
+    // 다시 dragover가 걸려 원래대로 되돌리는 일이 반복돼서 위아래로 계속 왔다갔다하는 것처럼 보였다.
+    // 커서가 대상 항목의 "중간선"을 실제로 넘어야만(아래로 옮기는 중이면 중간보다 아래로, 위로 옮기는
+    // 중이면 중간보다 위로) 자리를 바꾸도록 여유(hysteresis)를 둬서 이 진동을 막는다.
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpointY = rect.top + rect.height / 2;
+    const movingDown = itemIndex > drag.itemIndex;
+    if (movingDown && e.clientY < midpointY) return;
+    if (!movingDown && e.clientY > midpointY) return;
+
     setGroups((prev) => {
       const next = [...prev];
       const chars = [...next[groupIndex].characters];
