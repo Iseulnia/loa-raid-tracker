@@ -13,7 +13,6 @@ const SCAN_INTERVAL_MS = 800; // 군단장 클리어 배너는 몇 초 안에 �
 // 레이드 이름+난이도 문자열이 둘 다 정확히 일치해야만 매칭되므로 이미 충분히 엄격해서 1번이면 충분함
 // (2번을 요구하면 짧게 스쳐 지나가는 배너를 아예 놓치는 문제가 있었음).
 const CONFIRM_SCANS = 1;
-const RECHECK_COOLDOWN_MS = 30_000; // 같은 (캐릭터,레이드)를 짧은 시간 안에 반복 감지해도 다시 안 쏘게
 
 type AutoCheckEvent = {
   id: string;
@@ -53,9 +52,14 @@ export default function AutoDetectRunner({
   // 겪은 것과 같은 stale closure 버그). ref에 매 렌더마다 최신 함수를 담아두고, 인터벌은 이 ref로만 호출한다.
   const runScanRef = useRef<() => Promise<void>>(async () => {});
   const ocrBusyRef = useRef(false);
-  const lastTriggeredRef = useRef<Map<string, number>>(new Map()); // key -> timestamp
+  // 한 번 트리거한 (캐릭터,레이드)는 이 스캔 세션 동안 다시 트리거하지 않는다(시간 기반 쿨다운이었을 때는
+  // "나가기" 화면에 30초 넘게 머물면 같은 클리어가 다시 트리거돼서 히스토리에 중복 기록이 남는 문제가 있었음).
+  const triggeredKeysRef = useRef<Set<string>>(new Set());
   const pendingMatchRef = useRef<{ raidId: string; count: number } | null>(null);
-  const characterLockedRef = useRef(false); // 사용자가 수동으로 캐릭터를 고르면 true — 그 뒤로는 자동 인식이 안 덮어씀
+  // 사용자가 수동으로 캐릭터를 고르거나, 자동 인식이 한 번 성공하면 true — 그 뒤로는 매 틱마다 다시 안 읽는다
+  // (메뉴 감지처럼 캐릭터를 자주 바꿔가며 스캔하는 용도가 아니라, 한 캐릭터로 계속 도는 게 보통이라 매번
+  // 재인식할 필요가 없음 — "재감지" 버튼을 눌렀을 때만 다시 풀림).
+  const characterLockedRef = useRef(false);
   const selectedCharacterIdRef = useRef(characters[0]?.id ?? "");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
@@ -69,6 +73,7 @@ export default function AutoDetectRunner({
   const [error, setError] = useState("");
   const [statusText, setStatusText] = useState("대기 중");
   const [lastOcrText, setLastOcrText] = useState("");
+  const [lastClearButtonOcrText, setLastClearButtonOcrText] = useState<string | null>(null);
   const [checkedSet, setCheckedSet] = useState<Set<string>>(
     () => new Set(initialChecks.map((c) => `${c.character_id}:${c.raid_id}`))
   );
@@ -92,9 +97,18 @@ export default function AutoDetectRunner({
     characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
   }
 
+  /** "재감지" 버튼 — 캐릭터를 바꿔서 레이드에 가거나 오탐으로 다른 캐릭터가 잡혔을 때, 다시 OCR로
+   *  잡도록 잠금을 풀어준다. 스캔 중이면 다음 틱(최대 0.8초 뒤)에 바로 다시 읽는다. */
+  function redetectCharacter() {
+    characterLockedRef.current = false;
+    setAutoDetectedCharacterId(null);
+    setCharacterOcrStatus("idle");
+  }
+
   /** 파티원 목록 맨 위 캐릭터 이름을 읽어서 selectedCharacterIdRef를 최신으로 맞춘다. runScan()의 맨 앞에서
-   *  매번 호출한다 — 별도 타이머로 따로 돌리면, 그 텀 사이에 레이드가 끝나버릴 경우 이전 캐릭터로 잘못
-   *  체크되는 문제가 있음(메뉴 감지에서 겪었던 것과 같은 이유, 그래서 여기도 처음부터 병합해둠). */
+   *  매번 호출하지만, characterLockedRef가 true면(한 번 성공했거나 수동 선택했으면) 곧바로 리턴하고 아무
+   *  것도 안 읽는다 — 메뉴 감지와 달리 자동 감지는 스캔 내내 같은 캐릭터로 도는 게 보통이라 매 틱마다 다시
+   *  읽을 필요가 없고, "재감지" 버튼을 누르면 다시 풀려서 다음 틱에 재시도한다. */
   async function verifyCharacter(video: HTMLVideoElement) {
     if (!characterNameRegion || characterLockedRef.current || video.videoWidth === 0) return;
 
@@ -119,6 +133,7 @@ export default function AutoDetectRunner({
         }
         setAutoDetectedCharacterId(matched.id);
         setCharacterOcrStatus("matched");
+        characterLockedRef.current = true; // 한 번 잡았으면 "재감지" 누르기 전까진 다시 안 읽음
       } else {
         setCharacterOcrStatus("no-match");
       }
@@ -150,6 +165,7 @@ export default function AutoDetectRunner({
       setSharing(true);
       setStatusText("감지 중...");
       pendingMatchRef.current = null;
+      triggeredKeysRef.current = new Set();
       stream.getVideoTracks()[0]?.addEventListener("ended", stopShare);
       void runScanRef.current();
       intervalRef.current = setInterval(() => void runScanRef.current(), SCAN_INTERVAL_MS);
@@ -203,8 +219,10 @@ export default function AutoDetectRunner({
       let cleared: boolean;
       if (clearButtonOcrRegion) {
         const buttonText = await recognizeRegionText(canvas, canvas.width, canvas.height, clearButtonOcrRegion);
+        setLastClearButtonOcrText(buttonText);
         cleared = matchesClearButtonText(buttonText);
       } else {
+        setLastClearButtonOcrText(null); // 별도 영역이 없으면 결과화면 텍스트 안에서 찾으므로 따로 보여줄 게 없음
         cleared = matchesClearButtonText(text);
       }
       if (!cleared) {
@@ -220,12 +238,10 @@ export default function AutoDetectRunner({
 
       const raidLabel = `${matched.name} ${matched.difficulty}`;
       const key = `${characterId}:${matched.id}`;
-      const lastTriggered = lastTriggeredRef.current.get(key) ?? 0;
-      const alreadyChecked = checkedSetRef.current.has(key);
-      const cooledDown = Date.now() - lastTriggered > RECHECK_COOLDOWN_MS;
+      const alreadyChecked = checkedSetRef.current.has(key) || triggeredKeysRef.current.has(key);
 
-      if (!alreadyChecked && cooledDown) {
-        lastTriggeredRef.current.set(key, Date.now());
+      if (!alreadyChecked) {
+        triggeredKeysRef.current.add(key); // 이 스캔 세션 동안은 같은 (캐릭터,레이드)를 다시 안 쏨(중복 기록 방지)
         setStatusText(`${raidLabel} 감지됨 → 자동 체크 중...`);
         triggerAutoCheck(characterId, matched.id, raidLabel);
       }
@@ -251,22 +267,40 @@ export default function AutoDetectRunner({
       ]);
       setStatusText(`${raidLabel} 자동 체크 완료`);
     } catch {
-      setStatusText(`${raidLabel} 자동 체크 실패`);
+      // 아주 가끔 서버 액션 처리 중 일시적인 오류로 실패하는 경우가 있어서, 잠깐 쉬었다가 한 번 더
+      // 시도해본다(메뉴 감지의 applyFound와 동일한 재시도 패턴). 그래도 실패하면 이 세션에선 다시 안 쏜다
+      // (triggeredKeysRef에 이미 등록해뒀음 — 필요하면 대시보드에서 직접 체크하면 됨).
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
+        setCheckedSet((prev) => new Set(prev).add(key));
+        setEvents((prev) => [
+          { id: `${Date.now()}`, characterId, raidId, raidLabel, at: Date.now(), undone: false },
+          ...prev,
+        ]);
+        setStatusText(`${raidLabel} 자동 체크 완료`);
+      } catch {
+        setStatusText(`${raidLabel} 자동 체크 실패`);
+      }
     }
   }
 
   async function undoEvent(event: AutoCheckEvent) {
     const key = `${event.characterId}:${event.raidId}`;
+    // 취소 버튼을 눌렀을 때 서버 응답을 기다렸다가 화면을 바꾸면 체감 지연이 커서, 먼저 화면부터 바꾸고
+    // 실패하면 되돌린다(대시보드 체크 토글과 동일한 낙관적 업데이트 방식).
+    setCheckedSet((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, undone: true } : e)));
     try {
       await setRaidCheck({ characterId: event.characterId, raidId: event.raidId, gateNumber: 1, checked: false });
-      setCheckedSet((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, undone: true } : e)));
-    } catch {
-      setError("취소 중 오류가 발생했어요.");
+    } catch (err) {
+      setCheckedSet((prev) => new Set(prev).add(key));
+      setEvents((prev) => prev.map((e) => (e.id === event.id ? { ...e, undone: false } : e)));
+      setError(err instanceof Error ? err.message : "취소 중 오류가 발생했어요.");
     }
   }
 
@@ -295,6 +329,16 @@ export default function AutoDetectRunner({
         )}
         {sharing && characterOcrStatus === "no-match" && (
           <span className="text-xs text-neutral-400 dark:text-neutral-400">자동 인식 실패 — 직접 선택해주세요</span>
+        )}
+        {sharing && characterNameRegion && (
+          <button
+            type="button"
+            onClick={redetectCharacter}
+            title="캐릭터를 바꿔서 갔거나 오탐으로 다른 캐릭터가 잡혔을 때 다시 인식시켜요."
+            className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
+          >
+            캐릭터 재감지
+          </button>
         )}
 
         {!sharing ? (
@@ -390,7 +434,12 @@ export default function AutoDetectRunner({
       <canvas ref={frameCanvasRef} className="hidden" />
 
       {lastOcrText && sharing && (
-        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-400">최근 인식된 텍스트: {lastOcrText}</p>
+        <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-400">결과화면 인식 텍스트: {lastOcrText}</p>
+      )}
+      {clearButtonOcrRegion && lastClearButtonOcrText !== null && sharing && (
+        <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-400">
+          나가기 버튼 인식 텍스트: {lastClearButtonOcrText || "(빈 텍스트)"}
+        </p>
       )}
 
       {events.length > 0 && (

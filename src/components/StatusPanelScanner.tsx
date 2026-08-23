@@ -281,17 +281,16 @@ export default function StatusPanelScanner({
   }
 
   /** 오탐으로 체크됐을 때 되돌리기. 같은 스캔 세션 동안은 foundKeysRef에 그대로 남겨둬서 곧바로 다시 자동
-   *  체크되지 않게 한다 (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). */
+   *  체크되지 않게 한다 (다시 체크하려면 새로 스캔을 시작하거나 대시보드에서 직접 체크하면 됨). 서버 응답을
+   *  기다렸다가 화면을 바꾸면 체감 지연이 커서, 먼저 화면부터 바꾸고 실패하면 되돌린다(낙관적 업데이트). */
   async function undoFound(entry: FoundEntry) {
     if (!entry.raidId) return;
+    const base = { characterId: entry.characterId, characterName: entry.characterName, raidLabel: entry.raidLabel };
+    upsertEntry(entry.key, base, { status: "undone" });
     try {
       await setRaidCheck({ characterId: entry.characterId, raidId: entry.raidId, gateNumber: 1, checked: false });
-      upsertEntry(
-        entry.key,
-        { characterId: entry.characterId, characterName: entry.characterName, raidLabel: entry.raidLabel },
-        { status: "undone" }
-      );
     } catch (err) {
+      upsertEntry(entry.key, base, { status: "applied" });
       setError(err instanceof Error ? err.message : "취소 중 오류가 발생했어요.");
     }
   }
