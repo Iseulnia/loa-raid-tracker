@@ -44,8 +44,7 @@ export default async function AutoDetectPage() {
     templatesWithUrls.find((t) => t.template_type === "clear_button_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-      <h1 className="mb-1 text-xl font-bold text-neutral-900 dark:text-neutral-100">자동 감지 (베타)</h1>
+    <div className="pb-6">
       <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
         화면공유로 라이브 화면을 보면서, 관문 제목 표시줄의 레이드명+난이도와 하단 버튼이 &ldquo;나가기&rdquo;로
         바뀐 것을 OCR로 함께 읽어서 클리어된 레이드를 자동으로 인식·체크합니다(레이드명+난이도는 입장 직후부터
@@ -87,6 +86,6 @@ export default async function AutoDetectPage() {
           allowedTypes={["result_screen_ocr", "clear_button_ocr", "party_top_name_ocr"]}
         />
       </section>
-    </main>
+    </div>
   );
 }

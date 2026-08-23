@@ -7,8 +7,7 @@ const LINKS = [
   { href: "/", label: "대시보드" },
   { href: "/party", label: "공격대" },
   { href: "/characters", label: "내 캐릭터" },
-  { href: "/auto-detect", label: "자동 감지" },
-  { href: "/menu-detect", label: "메뉴 감지" },
+  { href: "/auto-detect", label: "체크 자동화", matchPrefixes: ["/auto-detect", "/menu-detect"] },
   { href: "/loa-tools", label: "로아 도구" },
 ];
 
@@ -18,7 +17,9 @@ export default function NavLinks() {
   return (
     <nav className="flex items-center gap-4 text-sm">
       {LINKS.map((link) => {
-        const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+        const active = link.href === "/"
+          ? pathname === "/"
+          : (link.matchPrefixes ?? [link.href]).some((prefix) => pathname.startsWith(prefix));
         return (
           <Link
             key={link.href}

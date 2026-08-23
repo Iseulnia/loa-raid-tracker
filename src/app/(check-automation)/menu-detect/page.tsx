@@ -36,8 +36,7 @@ export default async function MenuDetectPage() {
     .map((t) => ({ id: t.id, crop: t.crop! }));
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-      <h1 className="mb-1 text-xl font-bold text-neutral-900 dark:text-neutral-100">메뉴 감지 (베타)</h1>
+    <div className="pb-6">
       <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
         로아 메뉴의 &ldquo;레이드 참여 현황&rdquo; 패널(참여 가능/참여 완료 표시되는 목록)을 켜둔 상태로 스캔을
         시작하고, 목록을 천천히 스크롤해서 지나가면 클리어된 레이드가 자동으로 인식·체크됩니다. &ldquo;자동
@@ -77,6 +76,6 @@ export default async function MenuDetectPage() {
           allowedTypes={["participation_panel_ocr", "character_name"]}
         />
       </section>
-    </main>
+    </div>
   );
 }
