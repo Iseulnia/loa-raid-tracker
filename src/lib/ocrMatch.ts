@@ -63,6 +63,35 @@ function enhanceContrast(canvas: HTMLCanvasElement) {
   ctx.putImageData(imageData, 0, 0);
 }
 
+/** 캐릭터 이름표처럼 배경 색이 항상 정해져 있는 경우(빨간 체력바 위 흰 글씨) 전용 대비 처리.
+ *  일반 휘도(밝기) 기준으로는 빨간 배경도 R 채널이 높아서 밝게 잡히고, 체력바 자체의 그라데이션·하이라이트
+ *  때문에 밝기가 위치마다 들쭉날쭉해 대비가 흐려진다. 빨간 배경은 G·B가 항상 낮고 흰 글씨는 R·G·B가 다
+ *  높다는 점에 착안해서, G·B 중 더 작은 값을 밝기 대신 써서 R 채널의 흔들림에 영향을 안 받게 한다.
+ *  마지막에 반전해서 Tesseract가 더 잘 읽는 "밝은 배경 위 어두운 글씨"로 내보낸다. */
+function enhanceContrastWhiteOnRed(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d")!;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  let min = 255;
+  let max = 0;
+  const value = new Float32Array(canvas.width * canvas.height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const v = Math.min(data[i + 1], data[i + 2]); // G, B 중 작은 값
+    value[p] = v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+
+  const range = Math.max(1, max - min);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const stretched = ((value[p] - min) / range) * 255;
+    const inverted = 255 - stretched;
+    data[i] = data[i + 1] = data[i + 2] = inverted;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
 // OCR로 실제 글자 크기를 미리 재서 배율을 정하는 건 불가능하다(그러려면 이미 OCR이 한 번 성공해야 하는
 // 순환 문제라서). 대신 "충분히 크게 확대해두면 원본 글자가 작아도 상관없다"는 접근으로, 폭·높이 둘 다
 // 넉넉한 최소 크기를 보장한다. 폭만 기준으로 삼으면 크롭이 가로로 넓고 얇을 때(이름표처럼) 세로 해상도가
@@ -133,7 +162,8 @@ function cropRegionForOcr(
   sourceW: number,
   sourceH: number,
   crop: CropPct,
-  mode: "line" | "block" = "block"
+  mode: "line" | "block" = "block",
+  colorHint?: "whiteOnRed"
 ): HTMLCanvasElement {
   const sw = crop.wPct * sourceW;
   const sh = crop.hPct * sourceH;
@@ -143,7 +173,11 @@ function cropRegionForOcr(
   rawCanvas.height = Math.max(1, Math.round(sh));
   const rawCtx = rawCanvas.getContext("2d")!;
   rawCtx.drawImage(source, crop.xPct * sourceW, crop.yPct * sourceH, sw, sh, 0, 0, rawCanvas.width, rawCanvas.height);
-  enhanceContrast(rawCanvas);
+  if (colorHint === "whiteOnRed") {
+    enhanceContrastWhiteOnRed(rawCanvas);
+  } else {
+    enhanceContrast(rawCanvas);
+  }
 
   const trimmed = mode === "line" ? trimToInk(rawCanvas) : rawCanvas;
 
@@ -163,16 +197,19 @@ function cropRegionForOcr(
  *   짧은 UI 라벨에선 이 모드가 더 정확함, 실제 글자 부분만 자동으로 좁혀서 확대함). "block"(기본값):
  *   결과화면 텍스트처럼 레이드에 따라 두 줄로 나뉘거나 아이콘이 섞일 수 있는 크롭(SINGLE_BLOCK — 한 줄이든
  *   여러 줄이든 무난하게 읽히지만, 진짜 한 줄짜리 짧은 텍스트에서는 SINGLE_LINE보다 살짝 부정확할 수 있음).
+ * @param colorHint "whiteOnRed": 빨간 체력바 위 흰 글씨(파티원 목록 맨 위 캐릭터 이름)처럼 배경 색이
+ *   항상 정해져 있을 때, 일반 휘도 대신 그 색 조합 전용 대비 처리를 쓴다.
  */
 export async function recognizeRegionText(
   source: CanvasImageSource,
   sourceW: number,
   sourceH: number,
   crop: CropPct,
-  mode: "line" | "block" = "block"
+  mode: "line" | "block" = "block",
+  colorHint?: "whiteOnRed"
 ): Promise<string> {
   const worker = await getWorker();
-  const canvas = cropRegionForOcr(source, sourceW, sourceH, crop, mode);
+  const canvas = cropRegionForOcr(source, sourceW, sourceH, crop, mode, colorHint);
   const psm = mode === "line" ? Tesseract.PSM.SINGLE_LINE : Tesseract.PSM.SINGLE_BLOCK;
   await worker.setParameters({ tessedit_pageseg_mode: psm });
   const { data } = await worker.recognize(canvas);

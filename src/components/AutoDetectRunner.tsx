@@ -125,7 +125,15 @@ export default function AutoDetectRunner({
     try {
       // video를 바로 넘기면 크롭 영역 크기만큼만 그려지므로(recognizeRegionText 내부에서), 4K 프레임
       // 전체를 매 틱마다 캔버스에 복사하는 불필요한 비용을 없앨 수 있다.
-      const text = await recognizeRegionText(video, video.videoWidth, video.videoHeight, characterNameRegion, "line");
+      // 파티원 목록 맨 위 이름은 빨간 체력바 위에 흰 글씨로 뜨는 고정된 색 조합이라, 전용 대비 처리(whiteOnRed)를 쓴다.
+      const text = await recognizeRegionText(
+        video,
+        video.videoWidth,
+        video.videoHeight,
+        characterNameRegion,
+        "line",
+        "whiteOnRed"
+      );
       setLastCharacterOcrText(text);
       const matched = matchCharacterName(text, characters);
 
