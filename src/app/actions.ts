@@ -258,25 +258,45 @@ export async function setRaidCheck(params: {
 
 export type CharacterRaidSelection = { raidId: string; goldEarning: boolean };
 
-/** 캐릭터가 주간 숙제로 도는 레이드 목록(과 그중 골드를 받을 레이드)을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용). */
+/** 캐릭터가 주간 숙제로 도는 레이드 목록(과 그중 골드를 받을 레이드)을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용).
+ *  예전엔 기존 선택을 전부 delete하고 새로 insert했는데, 대부분 레이드는 그대로 유지된 채 한두 개만
+ *  바뀌는 경우가 많아서(예: 골드 받기 체크만 바꿈) 안 바뀐 레이드까지 delete+insert가 다시 일어났다.
+ *  Dashboard.tsx의 Realtime 구독은 이 delete/insert를 각각 이벤트로 받아서 characterRaidMap을 갱신하는데,
+ *  네트워크 타이밍에 따라 "새로 넣은 것"의 insert 이벤트가 먼저 오고 "안 바뀐 걸 지운" delete 이벤트가
+ *  뒤늦게 도착하면 그 delete 핸들러가 (character_id, raid_id)만 보고 지워버려서, 방금 저장한 화면에서
+ *  안 바뀐 레이드가 잠깐(또는 다음 갱신 전까지 계속) 사라져 보이는 문제가 있었다. 이제 실제로 바뀐
+ *  것만 delete하고 나머지는 upsert해서, 안 바뀐 레이드는 애초에 delete 이벤트 자체가 안 생기게 한다. */
 export async function setCharacterRaids(characterId: string, selections: CharacterRaidSelection[]) {
   const { supabase } = await requireUser();
 
-  const { error: deleteError } = await supabase
+  const { data: existing, error: fetchError } = await supabase
     .from("character_raids")
-    .delete()
+    .select("raid_id")
     .eq("character_id", characterId);
-  if (deleteError) throw new Error(deleteError.message);
+  if (fetchError) throw new Error(fetchError.message);
+
+  const nextRaidIds = new Set(selections.map((s) => s.raidId));
+  const toDelete = (existing ?? []).map((r) => r.raid_id).filter((raidId) => !nextRaidIds.has(raidId));
+
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("character_raids")
+      .delete()
+      .eq("character_id", characterId)
+      .in("raid_id", toDelete);
+    if (deleteError) throw new Error(deleteError.message);
+  }
 
   if (selections.length > 0) {
-    const { error: insertError } = await supabase.from("character_raids").insert(
+    const { error: upsertError } = await supabase.from("character_raids").upsert(
       selections.map((s) => ({
         character_id: characterId,
         raid_id: s.raidId,
         is_gold_earning: s.goldEarning,
-      }))
+      })),
+      { onConflict: "character_id,raid_id" }
     );
-    if (insertError) throw new Error(insertError.message);
+    if (upsertError) throw new Error(upsertError.message);
   }
 
   revalidatePath("/");

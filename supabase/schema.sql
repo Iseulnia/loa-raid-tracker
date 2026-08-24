@@ -210,6 +210,20 @@ create policy "character_raids_delete_own" on public.character_raids
       where c.id = character_id and c.owner_id = auth.uid()
     )
   );
+-- upsert가 이미 존재하는 행에 대해서는 내부적으로 UPDATE를 시도하므로 이 정책도 필요하다
+-- (weekly_checks의 checks_update_own_character와 같은 이유 — 없으면 "이미 고른 레이드를 다시 upsert"할 때 RLS로 거부됨).
+create policy "character_raids_update_own" on public.character_raids
+  for update using (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  ) with check (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
 
 create policy "raid_clear_templates_select_all" on public.raid_clear_templates
   for select using (auth.role() = 'authenticated');

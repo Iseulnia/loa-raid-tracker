@@ -646,6 +646,29 @@
 - **DB 스키마 변경 있음 — `migration_2026-08-25_template_examples.sql`을 Supabase SQL Editor에서 실행
   필요**(schema.sql에도 반영해둠).
 
+### "대시보드에서도" 숙제 안 보이는 문제 — 진짜 원인은 Realtime 경쟁 조건이었음
+
+`/party`에 `revalidatePath`가 빠져있던 걸 고쳤는데도 `/`(대시보드) 자체에서 여전히 재현된다는 재확인을
+받고 다시 조사함. `/`는 `revalidatePath("/")`가 이미 호출되고 있었고 로컬 상태도 즉시 갱신되는데, 그래도
+가끔 사라지는 건 캐시 문제가 아니라 Supabase Realtime 쪽 경쟁 조건이었음.
+
+- **원인**: `setCharacterRaids`(숙제 저장)가 기존엔 그 캐릭터의 `character_raids`를 전부 delete한 뒤
+  선택한 것 전부를 다시 insert했음. 그런데 보통 레이드 10개 중 1~2개만 바뀌고 나머지는 그대로인 경우가
+  많아서, **안 바뀐 레이드까지 delete+insert가 다시 일어남**. `Dashboard.tsx`의 Realtime 구독은 이
+  delete/insert를 각각 별도 이벤트로 받아서 `characterRaidMap`을 갱신하는데, 저장 직후 로컬 상태는
+  낙관적으로 이미 정확하게 바뀌어 있는 상태에서, 네트워크 타이밍상 "안 바뀐 레이드를 지운" delete
+  이벤트가 뒤늦게 도착하면 그 핸들러가 `(character_id, raid_id)` 키만 보고 지워버려서, 방금 저장했고
+  실제로는 그대로 유지돼야 할 레이드가 화면에서 사라짐 — 다음 갱신(새로고침)이 있어야 서버에서 다시
+  정확한 값을 받아와 복구됐음. "가끔씩"으로 보인 이유는 이 이벤트 도착 순서가 매번 다르기 때문.
+- **바뀐 것**(`src/app/actions.ts`의 `setCharacterRaids`): 전체 delete+insert 대신, 실제로 빠진 레이드만
+  delete하고 나머지는 upsert하도록 바꿈 — 안 바뀐 레이드는 애초에 delete 이벤트 자체가 안 생기므로 경쟁
+  조건 자체가 사라짐. upsert가 이미 있는 행에 대해 내부적으로 UPDATE를 시도하므로, `character_raids`에
+  없던 update RLS 정책(`character_raids_update_own`)을 추가했고, `Dashboard.tsx`의 Realtime 구독에도
+  UPDATE 이벤트 핸들러를 새로 추가함(기존 INSERT 핸들러와 동일한 로직 — 이미 선택된 레이드의 골드 받기
+  값만 바뀔 때 INSERT가 아니라 UPDATE로 오기 때문).
+- **DB 스키마 변경 있음 — `migration_2026-08-25b_character_raids_update_policy.sql`을 Supabase SQL
+  Editor에서 실행 필요**(schema.sql에도 반영해둠).
+
 ## 알려진 이슈 / TODO
 
 - 차원술사 클래스 아이콘: 임시 썸네일 → 정식 일러스트로 교체 필요

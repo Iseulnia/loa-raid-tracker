@@ -304,6 +304,18 @@ export default function Dashboard({
           return next;
         });
       })
+      // setCharacterRaids가 이제 안 바뀐 레이드는 delete+insert 대신 upsert하므로, 이미 선택돼 있던
+      // 레이드의 골드 받기 값만 바뀐 경우 INSERT가 아니라 UPDATE 이벤트로 온다 — 처리 방식은 INSERT와 동일.
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "character_raids" }, (payload) => {
+        const row = payload.new as CharacterRaidRow;
+        setCharacterRaidMap((prev) => {
+          const next = new Map(prev);
+          const inner = new Map(next.get(row.character_id) ?? []);
+          inner.set(row.raid_id, row.is_gold_earning);
+          next.set(row.character_id, inner);
+          return next;
+        });
+      })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "character_raids" }, (payload) => {
         const row = payload.old as Partial<CharacterRaidRow>;
         if (!row.character_id || !row.raid_id) return;
