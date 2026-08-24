@@ -80,6 +80,7 @@ export default async function MenuDetectPage() {
           characters={characters ?? []}
           initialTemplates={templatesWithUrls}
           allowedTypes={["participation_panel_ocr", "character_name"]}
+          currentUserId={user.id}
         />
       </section>
     </div>

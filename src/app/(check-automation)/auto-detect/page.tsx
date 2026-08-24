@@ -90,6 +90,7 @@ export default async function AutoDetectPage() {
           raids={raids ?? []}
           initialTemplates={templatesWithUrls}
           allowedTypes={["result_screen_ocr", "clear_button_ocr", "party_top_name_ocr"]}
+          currentUserId={user.id}
         />
       </section>
     </div>

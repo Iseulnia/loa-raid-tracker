@@ -18,6 +18,7 @@ type TemplateRow = {
   badge_crop: CropPct | null;
   character_id: string | null;
   storage_path: string;
+  created_by: string;
   created_at: string;
   url: string | null;
 };
@@ -43,6 +44,7 @@ export default function ScreenCapture({
   characters = [],
   initialTemplates,
   allowedTypes = DEFAULT_ALLOWED_TYPES,
+  currentUserId,
 }: {
   raids: RaidOption[];
   /** 저장된 기준 이미지 목록에서 예전 방식(캐릭터별) character_name 템플릿의 캐릭터명을 표시하는 데만 쓰인다. */
@@ -50,6 +52,9 @@ export default function ScreenCapture({
   initialTemplates: TemplateRow[];
   /** 이 화면에서 고를 수 있는 기준 이미지 유형을 제한한다 (탭마다 다른 용도로 쓰기 위함). */
   allowedTypes?: TemplateType[];
+  /** 남이 등록한 기준 이미지에는 삭제 버튼을 안 보여주기 위함(어차피 서버에서도 막지만, UI에서부터 막아서
+   *  헷갈리지 않게 함). */
+  currentUserId: string;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -218,6 +223,7 @@ export default function ScreenCapture({
           badge_crop: null,
           character_id: characterId,
           storage_path: path,
+          created_by: currentUserId,
           created_at: new Date().toISOString(),
           url: URL.createObjectURL(blob),
         },
@@ -419,9 +425,11 @@ export default function ScreenCapture({
                   <div className="flex flex-col gap-0.5 px-2 py-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-neutral-700 dark:text-neutral-300">{typeLabel}</span>
-                      <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline dark:text-red-400">
-                        삭제
-                      </button>
+                      {t.created_by === currentUserId && (
+                        <button type="button" onClick={() => handleDelete(t)} className="text-red-500 hover:underline dark:text-red-400">
+                          삭제
+                        </button>
+                      )}
                     </div>
                     {raid && <span className="text-neutral-400 dark:text-neutral-400">{raid.name} {raid.difficulty}</span>}
                     {t.raid_label && <span className="text-neutral-400 dark:text-neutral-400">{t.raid_label}</span>}

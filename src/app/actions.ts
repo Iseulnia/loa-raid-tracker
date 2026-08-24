@@ -317,14 +317,33 @@ export async function saveRaidClearTemplate(params: {
 }
 
 export async function deleteRaidClearTemplate(templateId: string, storagePath: string) {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
+
+  // Storage 삭제 정책은 로그인한 사람이면 누구나 지울 수 있게 열려 있는데(버킷 전체가 다 같이 쓰는
+  // 공용 등록 이미지라서), DB 행 삭제는 만든 사람만 가능하게 되어 있다(raid_clear_templates_delete_own).
+  // 예전엔 이 둘을 그냥 순서대로 호출해서, 남이 등록한 걸 지우려고 하면 스토리지 파일은 진짜로 지워지는데
+  // DB 행 삭제는 RLS에 걸려 조용히 0행 삭제로 끝나버렸다(에러 없이). 그 결과 파일은 없는데 DB 행만 남아서
+  // "미리보기 없음"으로 계속 보이는 더미 항목이 생겼다. 여기서 소유자인지 먼저 확인해서 아예 막는다.
+  const { data: template, error: fetchError } = await supabase
+    .from("raid_clear_templates")
+    .select("created_by")
+    .eq("id", templateId)
+    .single();
+  if (fetchError) throw new Error(fetchError.message);
+  if (template.created_by !== user.id) {
+    throw new Error("본인이 등록한 기준 이미지만 삭제할 수 있어요.");
+  }
+
+  // DB 행을 먼저 지우고 스토리지 파일을 나중에 지운다 — 혹시 스토리지 삭제가 실패해도(네트워크 등)
+  // 화면에 보이는 항목이 사라지지 않는 더미 행을 남기는 것보다, 안 쓰는 파일이 스토리지에 남는 쪽이 낫다.
+  const { error } = await supabase.from("raid_clear_templates").delete().eq("id", templateId);
+  if (error) throw new Error(error.message);
+
   const { error: storageError } = await supabase.storage
     .from("raid-clear-templates")
     .remove([storagePath]);
   if (storageError) throw new Error(storageError.message);
 
-  const { error } = await supabase.from("raid_clear_templates").delete().eq("id", templateId);
-  if (error) throw new Error(error.message);
   revalidatePath("/auto-detect");
   revalidatePath("/menu-detect");
 }
