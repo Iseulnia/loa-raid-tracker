@@ -21,6 +21,10 @@ export default async function AutoDetectPage() {
       .from("raid_clear_templates")
       .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at")
       .in("template_type", ["result_screen_ocr", "party_top_name_ocr", "clear_button_ocr"])
+      // 다른 사람 화면 배치/해상도가 달라서 어차피 본인이 등록한 것만 실제로 쓰이는데, 예전엔 친구들
+      // 것까지 다 가져와서 "기준 영역 등록" 목록에 섞여 보여 헷갈린다는 피드백을 받고 아예 본인 것만
+      // 가져오도록 바꿈.
+      .eq("created_by", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("weekly_checks").select("character_id, raid_id").eq("week_key", weekKey),
@@ -36,18 +40,17 @@ export default async function AutoDetectPage() {
   const urlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
   const templatesWithUrls = (templates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
 
-  // 위치가 고정이라(스크롤 없음) 내가 등록한 것 하나만 있으면 됨 — 다른 사람 화면 배치/해상도가 다를 수
-  // 있어서 반드시 내가 등록한 것만 쓴다 (raid_clear_templates는 RLS상 다른 사람 것도 보이는 테이블이라서).
+  // 위치가 고정이라(스크롤 없음) 내가 등록한 것 하나만 있으면 됨 — 위 쿼리에서 이미 본인 것만 가져왔다.
   const resultScreenOcrRegion =
-    templatesWithUrls.find((t) => t.template_type === "result_screen_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
+    templatesWithUrls.find((t) => t.template_type === "result_screen_ocr" && t.crop)?.crop ?? null;
   // 레이드 중 화면 우측 파티원 목록 맨 위(항상 내 캐릭터)를 읽어서 캐릭터를 직접 안 골라도 자동으로 따라가게
   // 함(선택 사항 — 등록 안 해도 기존처럼 드롭다운으로 직접 고르면 됨).
   const partyTopNameRegion =
-    templatesWithUrls.find((t) => t.template_type === "party_top_name_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
+    templatesWithUrls.find((t) => t.template_type === "party_top_name_ocr" && t.crop)?.crop ?? null;
   // "나가기" 버튼 텍스트만 따로 좁게 등록한 영역(선택 사항) — 있으면 이걸로 클리어 판정을 하고, 없으면
   // AutoDetectRunner가 결과화면 영역 텍스트 안에서 "나가기"를 같이 찾는 예전 방식으로 대체함(하위 호환).
   const clearButtonOcrRegion =
-    templatesWithUrls.find((t) => t.template_type === "clear_button_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
+    templatesWithUrls.find((t) => t.template_type === "clear_button_ocr" && t.crop)?.crop ?? null;
 
   return (
     <div className="pb-6">

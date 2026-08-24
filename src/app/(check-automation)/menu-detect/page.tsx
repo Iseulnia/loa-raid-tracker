@@ -18,6 +18,10 @@ export default async function MenuDetectPage() {
       .from("raid_clear_templates")
       .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at")
       .in("template_type", ["status_row", "character_name", "participation_panel_ocr"])
+      // 다른 사람 화면 배치/해상도가 달라서 어차피 본인이 등록한 것만 실제로 쓰이는데, 예전엔 친구들
+      // 것까지 다 가져와서 "기준 영역 등록" 목록에 섞여 보여 헷갈린다는 피드백을 받고 아예 본인 것만
+      // 가져오도록 바꿈.
+      .eq("created_by", user.id)
       .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("character_raids").select("character_id, raid_id"),
@@ -33,12 +37,12 @@ export default async function MenuDetectPage() {
   const urlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
   const templatesWithUrls = (templates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
 
-  // 위치가 고정인 영역들은(패널 전체, 캐릭터 이름) 내가 등록한 것만 쓴다 — 다른 사람 화면 배치/해상도가
-  // 다를 수 있어서다 (raid_clear_templates는 RLS상 다른 사람 것도 보이는 테이블이라서).
-  const panelRegion = templatesWithUrls.find((t) => t.template_type === "participation_panel_ocr" && t.crop && t.created_by === user.id)?.crop ?? null;
+  // 위치가 고정인 영역들은(패널 전체, 캐릭터 이름) 내가 등록한 것만 쓴다 — 위 쿼리에서 이미 본인 것만
+  // 가져왔다.
+  const panelRegion = templatesWithUrls.find((t) => t.template_type === "participation_panel_ocr" && t.crop)?.crop ?? null;
 
   const characterNameRegions = templatesWithUrls
-    .filter((t) => t.template_type === "character_name" && t.crop && t.created_by === user.id)
+    .filter((t) => t.template_type === "character_name" && t.crop)
     .map((t) => ({ id: t.id, crop: t.crop! }));
 
   return (
