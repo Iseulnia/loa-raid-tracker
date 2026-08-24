@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import ScreenCapture from "@/components/ScreenCapture";
 import StatusPanelScanner from "@/components/StatusPanelScanner";
+import ExampleTemplates from "@/components/ExampleTemplates";
+
+const REGION_TEMPLATE_TYPES = ["status_row", "character_name", "participation_panel_ocr"] as const;
 
 export default async function MenuDetectPage() {
   const supabase = await createClient();
@@ -12,30 +15,40 @@ export default async function MenuDetectPage() {
   const user = session?.user ?? null;
   if (!user) return null;
 
-  const [{ data: raids }, { data: templates }, { data: characters }, { data: characterRaids }] = await Promise.all([
+  const [{ data: raids }, { data: templates }, { data: exampleTemplates }, { data: characters }, { data: characterRaids }] = await Promise.all([
     supabase.from("raids").select("id, name, difficulty, sort_order").eq("is_active", true).order("sort_order"),
     supabase
       .from("raid_clear_templates")
-      .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at")
-      .in("template_type", ["status_row", "character_name", "participation_panel_ocr"])
+      .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at, is_example")
+      .in("template_type", REGION_TEMPLATE_TYPES)
       // 다른 사람 화면 배치/해상도가 달라서 어차피 본인이 등록한 것만 실제로 쓰이는데, 예전엔 친구들
       // 것까지 다 가져와서 "기준 영역 등록" 목록에 섞여 보여 헷갈린다는 피드백을 받고 아예 본인 것만
       // 가져오도록 바꿈.
       .eq("created_by", user.id)
       .order("created_at", { ascending: false }),
+    // 친구들이 "등록 예시로 공개"해둔 것들 — 등록자 상관없이 전원에게 보여줄 참고용 갤러리.
+    supabase
+      .from("raid_clear_templates")
+      .select("id, template_type, storage_path")
+      .in("template_type", REGION_TEMPLATE_TYPES)
+      .eq("is_example", true)
+      .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("character_raids").select("character_id, raid_id"),
   ]);
 
-  // 템플릿마다 서명 URL을 따로 요청하지 않고 한 번에 묶어서 요청한다(등록된 기준 영역이 여러 개일 때
-  // 요청 수를 템플릿 개수만큼이 아니라 1번으로 줄임).
-  const templatePaths = (templates ?? []).map((t) => t.storage_path);
+  // 템플릿마다 서명 URL을 따로 요청하지 않고(본인 목록 + 예시 목록 합쳐서) 한 번에 묶어서 요청한다.
+  const templatePaths = [
+    ...(templates ?? []).map((t) => t.storage_path),
+    ...(exampleTemplates ?? []).map((t) => t.storage_path),
+  ];
   const { data: signedUrls } =
     templatePaths.length > 0
       ? await supabase.storage.from("raid-clear-templates").createSignedUrls(templatePaths, 600)
       : { data: null };
   const urlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
   const templatesWithUrls = (templates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
+  const exampleTemplatesWithUrls = (exampleTemplates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
 
   // 위치가 고정인 영역들은(패널 전체, 캐릭터 이름) 내가 등록한 것만 쓴다 — 위 쿼리에서 이미 본인 것만
   // 가져왔다.
@@ -79,6 +92,7 @@ export default async function MenuDetectPage() {
             선택 (한 번만 등록하면 됨 — OCR로 그 자리 글자를 읽어서 어떤 캐릭터든 자동으로 인식해요)
           </li>
         </ul>
+        <ExampleTemplates templates={exampleTemplatesWithUrls} />
         <ScreenCapture
           raids={raids ?? []}
           characters={characters ?? []}

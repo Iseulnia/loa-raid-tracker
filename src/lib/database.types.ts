@@ -89,6 +89,7 @@ export type Database = {
           storage_path: string;
           created_by: string;
           created_at: string;
+          is_example: boolean;
         };
         Insert: {
           id?: string;
@@ -101,6 +102,7 @@ export type Database = {
           storage_path: string;
           created_by: string;
           created_at?: string;
+          is_example?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["raid_clear_templates"]["Insert"]>;
         Relationships: [

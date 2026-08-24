@@ -54,6 +54,7 @@ export async function importCharacters(characters: ImportableCharacter[], expedi
   if (error) throw new Error(error.message);
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
 }
 
 /** 같은 원정대(expedition_label) 안에서 이 캐릭터만 대표 캐릭터로 지정하고 나머지는 해제한다. */
@@ -80,6 +81,7 @@ export async function setMainCharacter(characterId: string) {
 
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
 }
 
 /** 대시보드에서 드래그로 정한 새 캐릭터 순서를 저장한다 (배열 순서 = sort_order). 내 캐릭터만 바꿀 수 있음. */
@@ -157,6 +159,7 @@ export async function refreshAllCombatPower(): Promise<CombatPowerBulkResult> {
 
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
   return results;
 }
 
@@ -189,6 +192,7 @@ export async function resetAllCombatPower(): Promise<CombatPowerBulkResult> {
 
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
   return results;
 }
 
@@ -201,6 +205,7 @@ export async function toggleGoldEarner(characterId: string, isGoldEarner: boolea
   if (error) throw new Error(error.message);
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
 }
 
 export async function deleteCharacter(characterId: string) {
@@ -209,6 +214,7 @@ export async function deleteCharacter(characterId: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/characters");
   revalidatePath("/");
+  revalidatePath("/party");
 }
 
 /**
@@ -274,6 +280,7 @@ export async function setCharacterRaids(characterId: string, selections: Charact
   }
 
   revalidatePath("/");
+  revalidatePath("/party");
 }
 
 export type TemplateType =
@@ -343,6 +350,32 @@ export async function deleteRaidClearTemplate(templateId: string, storagePath: s
     .from("raid-clear-templates")
     .remove([storagePath]);
   if (storageError) throw new Error(storageError.message);
+
+  revalidatePath("/auto-detect");
+  revalidatePath("/menu-detect");
+}
+
+/** 본인이 등록한 기준 이미지를 "등록 예시"로 지정/해제한다 — 영역을 어떻게 잡아야 하는지 헷갈려하는
+ *  친구들에게 참고용으로 보여주기 위함. raid_clear_templates는 전원이 읽을 수 있는 공용 테이블이라
+ *  is_example만 true로 바꾸면 다른 사람 화면에도 바로 예시 갤러리로 노출된다. */
+export async function setTemplateExample(templateId: string, isExample: boolean) {
+  const { supabase, user } = await requireUser();
+
+  const { data: template, error: fetchError } = await supabase
+    .from("raid_clear_templates")
+    .select("created_by")
+    .eq("id", templateId)
+    .single();
+  if (fetchError) throw new Error(fetchError.message);
+  if (template.created_by !== user.id) {
+    throw new Error("본인이 등록한 기준 이미지만 예시로 지정할 수 있어요.");
+  }
+
+  const { error } = await supabase
+    .from("raid_clear_templates")
+    .update({ is_example: isExample })
+    .eq("id", templateId);
+  if (error) throw new Error(error.message);
 
   revalidatePath("/auto-detect");
   revalidatePath("/menu-detect");

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { saveRaidClearTemplate, deleteRaidClearTemplate, type TemplateType } from "@/app/actions";
+import { saveRaidClearTemplate, deleteRaidClearTemplate, setTemplateExample, type TemplateType } from "@/app/actions";
 import { SCREEN_CAPTURE_VIDEO_CONSTRAINTS } from "@/lib/ocrMatch";
 
 type RaidOption = { id: string; name: string; difficulty: string; sort_order: number };
@@ -20,10 +20,11 @@ type TemplateRow = {
   storage_path: string;
   created_by: string;
   created_at: string;
+  is_example: boolean;
   url: string | null;
 };
 
-const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
+export const TEMPLATE_TYPE_LABEL: Record<TemplateType, string> = {
   clear_banner: "던전 클리어 배너",
   result_screen: "레이드 결과화면(레이드명)",
   gate_checkmark: "관문 체크마크",
@@ -224,6 +225,7 @@ export default function ScreenCapture({
           character_id: characterId,
           storage_path: path,
           created_by: currentUserId,
+          is_example: false,
           created_at: new Date().toISOString(),
           url: URL.createObjectURL(blob),
         },
@@ -250,6 +252,19 @@ export default function ScreenCapture({
       setError(err instanceof Error ? err.message : "삭제 중 오류가 발생했어요.");
     } finally {
       router.refresh();
+    }
+  }
+
+  /** 영역을 어떻게 잡아야 하는지 헷갈려하는 친구들을 위해, 등록해둔 이미지를 "등록 예시" 갤러리에
+   *  보여줄지 토글한다. 다른 사람에게도 바로 보이므로 실패 시 낙관적 업데이트를 되돌린다. */
+  async function handleToggleExample(template: TemplateRow) {
+    const next = !template.is_example;
+    setTemplates((prev) => prev.map((t) => (t.id === template.id ? { ...t, is_example: next } : t)));
+    try {
+      await setTemplateExample(template.id, next);
+    } catch (err) {
+      setTemplates((prev) => prev.map((t) => (t.id === template.id ? { ...t, is_example: !next } : t)));
+      setError(err instanceof Error ? err.message : "예시 지정 중 오류가 발생했어요.");
     }
   }
 
@@ -434,6 +449,21 @@ export default function ScreenCapture({
                     {raid && <span className="text-neutral-400 dark:text-neutral-400">{raid.name} {raid.difficulty}</span>}
                     {t.raid_label && <span className="text-neutral-400 dark:text-neutral-400">{t.raid_label}</span>}
                     {character && <span className="text-neutral-400 dark:text-neutral-400">{character.name}</span>}
+                    {t.created_by === currentUserId && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleExample(t)}
+                        title="다른 친구들에게 영역 등록 예시로 보여줘요"
+                        className={[
+                          "mt-0.5 self-start rounded border px-1.5 py-0.5 text-[10px]",
+                          t.is_example
+                            ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                            : "border-neutral-200 text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-700 dark:text-neutral-500 dark:hover:border-neutral-500 dark:hover:text-neutral-300",
+                        ].join(" ")}
+                      >
+                        {t.is_example ? "✓ 등록 예시로 공개 중" : "등록 예시로 공개"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

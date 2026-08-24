@@ -119,7 +119,8 @@ create table if not exists public.raid_clear_templates (
   character_id uuid references public.characters (id) on delete cascade, -- 'character_name' 전용
   storage_path text not null,
   created_by uuid not null references public.profiles (id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  is_example boolean not null default false -- 다른 친구들에게 등록 예시로 보여줄지 여부(본인이 지정)
 );
 
 create index if not exists raid_clear_templates_raid_idx on public.raid_clear_templates (raid_id);
@@ -216,6 +217,8 @@ create policy "raid_clear_templates_insert_own" on public.raid_clear_templates
   for insert with check (auth.uid() = created_by);
 create policy "raid_clear_templates_delete_own" on public.raid_clear_templates
   for delete using (auth.uid() = created_by);
+create policy "raid_clear_templates_update_own" on public.raid_clear_templates
+  for update using (auth.uid() = created_by) with check (auth.uid() = created_by);
 
 create policy "raid_clear_template_files_select" on storage.objects
   for select using (bucket_id = 'raid-clear-templates' and auth.role() = 'authenticated');

@@ -2,6 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentWeekKey } from "@/lib/week";
 import ScreenCapture from "@/components/ScreenCapture";
 import AutoDetectRunner from "@/components/AutoDetectRunner";
+import ExampleTemplates from "@/components/ExampleTemplates";
+
+const REGION_TEMPLATE_TYPES = ["result_screen_ocr", "party_top_name_ocr", "clear_button_ocr"] as const;
 
 export default async function AutoDetectPage() {
   const supabase = await createClient();
@@ -15,30 +18,40 @@ export default async function AutoDetectPage() {
 
   const weekKey = getCurrentWeekKey();
 
-  const [{ data: raids }, { data: templates }, { data: characters }, { data: checks }] = await Promise.all([
+  const [{ data: raids }, { data: templates }, { data: exampleTemplates }, { data: characters }, { data: checks }] = await Promise.all([
     supabase.from("raids").select("id, name, difficulty, sort_order").eq("is_active", true).order("sort_order"),
     supabase
       .from("raid_clear_templates")
-      .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at")
-      .in("template_type", ["result_screen_ocr", "party_top_name_ocr", "clear_button_ocr"])
+      .select("id, raid_id, template_type, crop, raid_label, badge_crop, character_id, storage_path, created_by, created_at, is_example")
+      .in("template_type", REGION_TEMPLATE_TYPES)
       // 다른 사람 화면 배치/해상도가 달라서 어차피 본인이 등록한 것만 실제로 쓰이는데, 예전엔 친구들
       // 것까지 다 가져와서 "기준 영역 등록" 목록에 섞여 보여 헷갈린다는 피드백을 받고 아예 본인 것만
       // 가져오도록 바꿈.
       .eq("created_by", user.id)
       .order("created_at", { ascending: false }),
+    // 친구들이 "등록 예시로 공개"해둔 것들 — 등록자 상관없이 전원에게 보여줄 참고용 갤러리.
+    supabase
+      .from("raid_clear_templates")
+      .select("id, template_type, storage_path")
+      .in("template_type", REGION_TEMPLATE_TYPES)
+      .eq("is_example", true)
+      .order("created_at", { ascending: false }),
     supabase.from("characters").select("id, name, item_level").eq("owner_id", user.id).order("item_level", { ascending: false }),
     supabase.from("weekly_checks").select("character_id, raid_id").eq("week_key", weekKey),
   ]);
 
-  // 템플릿마다 서명 URL을 따로 요청하지 않고 한 번에 묶어서 요청한다(등록된 기준 영역이 여러 개일 때
-  // 요청 수를 템플릿 개수만큼이 아니라 1번으로 줄임).
-  const templatePaths = (templates ?? []).map((t) => t.storage_path);
+  // 템플릿마다 서명 URL을 따로 요청하지 않고(본인 목록 + 예시 목록 합쳐서) 한 번에 묶어서 요청한다.
+  const templatePaths = [
+    ...(templates ?? []).map((t) => t.storage_path),
+    ...(exampleTemplates ?? []).map((t) => t.storage_path),
+  ];
   const { data: signedUrls } =
     templatePaths.length > 0
       ? await supabase.storage.from("raid-clear-templates").createSignedUrls(templatePaths, 600)
       : { data: null };
   const urlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
   const templatesWithUrls = (templates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
+  const exampleTemplatesWithUrls = (exampleTemplates ?? []).map((t) => ({ ...t, url: urlByPath.get(t.storage_path) ?? null }));
 
   // 위치가 고정이라(스크롤 없음) 내가 등록한 것 하나만 있으면 됨 — 위 쿼리에서 이미 본인 것만 가져왔다.
   const resultScreenOcrRegion =
@@ -89,6 +102,7 @@ export default async function AutoDetectPage() {
           우측 파티원 목록 맨 위(항상 내 캐릭터) 이름 위치도 등록해두면 캐릭터를 매번 직접 고르지 않아도
           자동으로 인식돼요(선택 사항).
         </p>
+        <ExampleTemplates templates={exampleTemplatesWithUrls} />
         <ScreenCapture
           raids={raids ?? []}
           initialTemplates={templatesWithUrls}
