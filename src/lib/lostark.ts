@@ -160,3 +160,51 @@ export async function searchMarketItemsByCategory(categoryCode: number): Promise
   }
   return items;
 }
+
+// 겁화/작열의 보석은 거래소(markets)가 아니라 경매장(auctions) 아이템 — 장비처럼 매물마다 다른 랜덤
+// 옵션(어떤 스킬에 붙는지)이 붙어서 거래소식 "고정 아이템 하나에 시세 하나" 구조가 아니라 개별 매물
+// 목록으로 나온다. 경매장 카테고리 코드는 markets와 다른 체계(보석=210000)를 쓴다.
+const AUCTION_GEM_CATEGORY_CODE = 210000;
+
+/** 이름이 정확히 일치하는 경매장 매물들 중 즉시 구매가 있는 것만 모아 최저가를 반환한다.
+ *  매물이 없거나 전부 즉시구매 불가(입찰만 가능)면 null. */
+export async function searchAuctionLowestBuyPrice(itemName: string): Promise<number | null> {
+  const res = await fetch(`${BASE_URL}/auctions/items`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getApiKey()}`,
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      ItemLevelMin: 0,
+      ItemLevelMax: 1800,
+      ItemGradeQuality: 0,
+      SkillOptions: [],
+      EtcOptions: [],
+      Sort: "BUY_PRICE",
+      CategoryCode: AUCTION_GEM_CATEGORY_CODE,
+      CharacterClass: "",
+      ItemTier: 4,
+      ItemGrade: "",
+      ItemName: itemName,
+      PageNo: 1,
+      SortCondition: "ASC",
+    }),
+    cache: "no-store",
+  });
+
+  if (res.status === 401) {
+    throw new LostArkApiError("API 키가 올바르지 않거나 만료됐어요.", 401);
+  }
+  if (!res.ok) {
+    throw new LostArkApiError(`로스트아크 경매장 API 호출 실패 (status ${res.status})`, res.status);
+  }
+
+  const data = (await res.json()) as { Items: { AuctionInfo: { BuyPrice: number } }[] | null };
+  const buyPrices = (data.Items ?? [])
+    .map((it) => it.AuctionInfo.BuyPrice)
+    .filter((price) => price > 0);
+  if (buyPrices.length === 0) return null;
+  return Math.min(...buyPrices);
+}

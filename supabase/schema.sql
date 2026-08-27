@@ -158,6 +158,21 @@ create table if not exists public.market_item_prices (
   updated_at timestamptz not null default now()
 );
 
+-- ─────────────────────────────────────────────
+-- 4-2. gem_price_snapshots: 로아 도구 > 보석 가격 탭용.
+--    겁화/작열의 보석은 "경매장" 아이템이라 API가 과거 시세 통계를 안 줘서, "현재가 갱신"을 누를 때마다
+--    직접 한 행씩 쌓아서 하루 평균/전일 대비/7일 추이를 우리가 계산할 수 있게 함.
+-- ─────────────────────────────────────────────
+create table if not exists public.gem_price_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  gem_key text not null,
+  price numeric not null,
+  recorded_by uuid references public.profiles (id),
+  recorded_at timestamptz not null default now()
+);
+
+create index if not exists gem_price_snapshots_gem_key_idx on public.gem_price_snapshots (gem_key, recorded_at desc);
+
 -- 실시간 DELETE 이벤트에 삭제된 행의 전체 컬럼이 실려오게 함 (기본값은 PK만 전달되어
 -- 다른 친구 화면에서 체크 해제가 실시간으로 반영되지 않는 문제가 생김)
 alter table public.weekly_checks replica identity full;
@@ -174,6 +189,7 @@ alter table public.character_raids enable row level security;
 alter table public.raid_clear_templates enable row level security;
 alter table public.weekly_checks enable row level security;
 alter table public.market_item_prices enable row level security;
+alter table public.gem_price_snapshots enable row level security;
 
 create policy "profiles_select_all" on public.profiles
   for select using (auth.role() = 'authenticated');
@@ -276,6 +292,11 @@ create policy "market_item_prices_select_all" on public.market_item_prices
   for select using (auth.role() = 'authenticated');
 create policy "market_item_prices_write_all" on public.market_item_prices
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+create policy "gem_price_snapshots_select_all" on public.gem_price_snapshots
+  for select using (auth.role() = 'authenticated');
+create policy "gem_price_snapshots_insert_all" on public.gem_price_snapshots
+  for insert with check (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────────
 -- 6. 실시간 브로드캐스트 활성화 (체크하면 다른 친구 화면에도 바로 반영)

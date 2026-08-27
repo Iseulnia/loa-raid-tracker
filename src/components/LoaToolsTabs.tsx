@@ -3,10 +3,12 @@
 import { useState } from "react";
 import AuctionBidCalculator from "@/components/AuctionBidCalculator";
 import MoreRewardsEfficiency from "@/components/MoreRewardsEfficiency";
+import GemPrices from "@/components/GemPrices";
 
 const TABS = [
   { key: "auction", label: "경매 계산기" },
   { key: "moreRewards", label: "더보기 효율" },
+  { key: "gemPrices", label: "보석 가격" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -55,6 +57,13 @@ export default function LoaToolsTabs() {
             이득/손해를 보여줘요. &ldquo;현재가 갱신&rdquo;을 눌러야 최신 시세로 계산돼요.
           </p>
           <MoreRewardsEfficiency />
+        </section>
+      )}
+
+      {tab === "gemPrices" && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">보석 가격</h2>
+          <GemPrices />
         </section>
       )}
     </div>

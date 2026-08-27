@@ -200,6 +200,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["market_item_prices"]["Insert"]>;
         Relationships: [];
       };
+      gem_price_snapshots: {
+        Row: {
+          id: string;
+          gem_key: string;
+          price: number;
+          recorded_by: string | null;
+          recorded_at: string;
+        };
+        Insert: {
+          id?: string;
+          gem_key: string;
+          price: number;
+          recorded_by?: string | null;
+          recorded_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["gem_price_snapshots"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
