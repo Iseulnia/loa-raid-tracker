@@ -1,0 +1,20 @@
+name: 보석 시세 자동 기록
+
+# Vercel Hobby 요금제의 Cron은 하루 1번으로 제한돼서, 3시간마다 돌리려고 GitHub Actions 스케줄러를 대신 씀.
+# 필요한 저장소 시크릿(Settings > Secrets and variables > Actions):
+#   APP_URL      배포된 앱 주소 (예: https://your-app.vercel.app, 끝에 / 없이)
+#   CRON_SECRET  /api/cron/gem-prices 라우트와 값이 같아야 함 (Vercel 환경 변수 CRON_SECRET과 동일한 값)
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 보석 시세 스냅샷 요청
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/gem-prices" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

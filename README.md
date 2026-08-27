@@ -55,6 +55,22 @@ Vercel에 이 저장소를 연결하고 위 3개 환경 변수(`NEXT_PUBLIC_SUPA
 `LOSTARK_API_KEY`)를 Vercel 프로젝트 설정에도 동일하게 등록하면 끝입니다. 친구들에게 배포된 URL만 공유하면
 각자 이메일로 로그인해서 쓸 수 있어요.
 
+## 보석 가격 자동 수집 설정 (선택)
+
+로아 도구 > 보석 가격 탭은 "현재가 갱신" 버튼을 눌러야 시세가 기록되는데, 아무도 안 눌러도 3시간마다
+자동으로 기록되게 하려면 GitHub Actions 스케줄러([.github/workflows/gem-price-cron.yml](.github/workflows/gem-price-cron.yml))를
+씁니다(Vercel Hobby 요금제의 Cron은 하루 1번으로 제한돼 있어서 대신 씀). 설정 안 해도 앱 자체는 정상
+동작하고, 그냥 자동 기록만 안 될 뿐입니다.
+
+1. Supabase **Project Settings → API**에서 `service_role` 키를 복사(⚠️ RLS를 전부 무시하는 강력한 키라
+   외부에 노출되면 안 됨 — 아래 두 곳에만 등록)해서 Vercel 프로젝트 환경 변수에 `SUPABASE_SERVICE_ROLE_KEY`로 등록
+2. 임의의 긴 문자열을 하나 만들어서(`openssl rand -hex 32` 등) Vercel 환경 변수에 `CRON_SECRET`으로 등록
+3. GitHub 저장소 **Settings → Secrets and variables → Actions**에서 시크릿 2개 등록:
+   - `APP_URL`: 배포된 앱 주소(끝에 `/` 없이, 예: `https://your-app.vercel.app`)
+   - `CRON_SECRET`: 2번에서 만든 값과 **동일하게**
+4. 저장소에 푸시하면 워크플로가 자동으로 3시간마다 실행됩니다. **Actions** 탭에서 `보석 시세 자동 기록`을
+   눌러 `Run workflow`로 바로 한 번 테스트해볼 수 있어요.
+
 ## 레이드 마스터 목록 관리
 
 레이드 이름/난이도/필요 아이템레벨/골드는 `supabase/schema.sql` 안에 시드 데이터로 들어있고, 앱 안에 이걸

@@ -194,7 +194,7 @@ export default function GemPrices() {
         누른 만큼 데이터가 채워져요.
       </p>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {GEMS.map((gem) => {
           const stats = statsByKey.get(gem.key);
           return (
