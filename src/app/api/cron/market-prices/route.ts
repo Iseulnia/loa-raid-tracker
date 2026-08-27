@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/serviceRole";
+import { refreshMarketItemPrices } from "@/lib/marketPricesRefresh";
 import { LostArkApiError } from "@/lib/lostark";
-import { refreshGemPriceSnapshots } from "@/lib/gemPrices";
 
 // 외부 스케줄러(GitHub Actions 등)가 로그인 세션 없이 호출하는 경로라, 아무나 못 부르게 시크릿으로 막는다.
-// 로그인한 사용자 화면에서 누르는 "현재가 갱신"(/api/lostark/gems POST)과는 별개의 경로.
+// 로그인한 사용자 화면에서 누르는 "현재가 갱신"(/api/lostark/market POST)과는 별개의 경로.
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -17,10 +17,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = createServiceRoleClient();
-    const rows = await refreshGemPriceSnapshots(supabase, null);
-    return NextResponse.json({ inserted: rows.length });
+    const { items } = await refreshMarketItemPrices(supabase, null);
+    return NextResponse.json({ updated: items.length });
   } catch (err) {
-    console.error("[cron/gem-prices] refresh failed:", err);
+    console.error("[cron/market-prices] refresh failed:", err);
     if (err instanceof LostArkApiError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }

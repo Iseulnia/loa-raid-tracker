@@ -189,9 +189,9 @@ export default function GemPrices() {
       </div>
       {error && <p className="text-xs text-rose-500">{error}</p>}
       <p className="text-xs text-neutral-400 dark:text-neutral-500">
-        겁화·작열의 보석은 경매장 매물이라 로스트아크 API가 과거 시세를 따로 안 줘요. &ldquo;현재가 갱신&rdquo;을
-        누를 때마다 그 시점 최저가를 기록해서 하루 평균·전일 대비·7일 추이를 직접 쌓아가는 방식이라, 갱신을
-        누른 만큼 데이터가 채워져요.
+        겁화·작열의 보석은 경매장 매물이라 로스트아크 API가 과거 시세를 따로 안 줘요. 1시간마다 자동으로
+        그 시점 최저가를 기록해서 하루 평균·전일 대비·7일 추이를 직접 쌓아가는 방식이라, 시간이 지날수록
+        데이터가 채워져요. &ldquo;현재가 갱신&rdquo;을 누르면 그 자리에서 바로 한 번 더 기록할 수 있어요.
       </p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

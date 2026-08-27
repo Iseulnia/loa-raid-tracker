@@ -736,6 +736,26 @@
 구조라 미들웨어의 세션 체크가 필요 없음(오히려 방해가 됨). `PUBLIC_PATHS`에 `/api/cron`을 추가해서 미들웨어
 단계는 건너뛰고 라우트 자체의 시크릿 검증만 거치게 함.
 
+### 보석 시세 1시간마다로 단축 + 더보기 효율도 자동 갱신 추가
+
+- **부하 검토**: 1시간 간격으로 바꿔도 되는지 먼저 따져봄. 로스트아크 API 호출량은 보석 6회/더보기 4회로
+  둘 다 미미해서 문제 아니었고, 실제 제약은 GitHub Actions 무료 분(사설 저장소 월 2,000분)이었음. 보석을
+  1시간 간격으로 올리면 월 약 720분, 더보기까지 똑같이 1시간으로 하면 도합 1440분(전체 예산의 72%)이라
+  다른 용도로 쓸 여유가 거의 안 남음. 그래서 보석은 요청대로 1시간, 더보기는 사용자가 미리 허용해준
+  대안대로 3시간으로 나눠서(도합 약 960분, 48%) 여유를 남김.
+- **바뀐 것**: `gem-price-cron.yml` 스케줄을 `0 */3 * * *` → `0 * * * *`로 변경. 더보기 효율(거래소
+  시세)도 동일한 패턴으로 자동 갱신되도록 `/api/cron/market-prices`(POST, CRON_SECRET+service_role)와
+  `.github/workflows/market-price-cron.yml`(3시간마다)을 새로 추가함 — 기존 보석 크론과 완전히 같은
+  구조(로그인 세션 대신 시크릿으로 인증, service_role로 RLS 우회해서 DB에 씀).
+  - 리팩터링: 사용자가 누르는 갱신(`/api/lostark/gems`, `/api/lostark/market`)과 크론 갱신
+    (`/api/cron/gem-prices`, `/api/cron/market-prices`)이 완전히 같은 로직을 중복해서 갖고 있었어서,
+    각각 `refreshGemPriceSnapshots`(`src/lib/gemPrices.ts`)와 `refreshMarketItemPrices`
+    (`src/lib/marketPricesRefresh.ts`)로 뽑아내 양쪽 라우트가 공유하게 정리함(Supabase 클라이언트만
+    다르게 넘김 — 로그인 세션 기반이냐 service_role이냐).
+- **README/UI 문구 업데이트**: 시세 자동 수집 설정 섹션에 두 워크플로(보석 1시간·더보기 3시간) 안내를
+  같이 정리했고, 더보기 효율/보석 가격 탭 안내 문구에도 자동 갱신 주기를 명시해서 사용자가 안 눌러도
+  왜 시세가 바뀌는지 헷갈리지 않게 함.
+
 ## 알려진 이슈 / TODO
 
 - 차원술사 클래스 아이콘: 임시 썸네일 → 정식 일러스트로 교체 필요

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { searchAuctionLowestBuyPrice, LostArkApiError } from "@/lib/lostark";
-import { GEMS } from "@/lib/gemPrices";
+import { LostArkApiError } from "@/lib/lostark";
+import { refreshGemPriceSnapshots } from "@/lib/gemPrices";
 
 // 하루 평균/전일 대비/7일 추이를 계산하려면 적어도 지난 8일치가 있어야 "오늘 vs 어제"까지 계산할 수 있다.
 const HISTORY_DAYS = 8;
@@ -42,23 +42,7 @@ export async function POST() {
   }
 
   try {
-    const results = await Promise.all(
-      GEMS.map(async (gem) => ({ gem_key: gem.key, price: await searchAuctionLowestBuyPrice(gem.name) }))
-    );
-
-    const now = new Date().toISOString();
-    const rows = results
-      .filter((r): r is { gem_key: string; price: number } => r.price !== null)
-      .map((r) => ({ gem_key: r.gem_key, price: r.price, recorded_by: user.id, recorded_at: now }));
-
-    if (rows.length > 0) {
-      const { error } = await supabase.from("gem_price_snapshots").insert(rows);
-      if (error) {
-        console.error("[lostark/gems] db insert failed:", error);
-        return NextResponse.json({ error: "가격 저장에 실패했어요." }, { status: 500 });
-      }
-    }
-
+    const rows = await refreshGemPriceSnapshots(supabase, user.id);
     return NextResponse.json({ snapshots: rows });
   } catch (err) {
     console.error("[lostark/gems] refresh failed:", err);

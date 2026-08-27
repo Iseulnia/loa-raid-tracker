@@ -1,0 +1,22 @@
+name: 더보기 재료 시세 자동 기록
+
+# 더보기 효율 탭의 거래소 시세(재련 재료 카테고리, 요청 한 번에 페이지 4장 정도)를 자동으로 갱신함.
+# 보석 시세(시간당)와 합쳐서 GitHub Actions 무료 분(월 2,000분) 안에 여유 있게 들어오도록 이쪽은 3시간
+# 간격으로 둠 — 더보기 재료는 시세 변동이 보석만큼 급하지 않아서 1시간까지는 필요 없다고 판단.
+# 필요한 저장소 시크릿(보석 시세 워크플로와 동일한 값 재사용):
+#   APP_URL      배포된 앱 주소 (예: https://your-app.vercel.app, 끝에 / 없이)
+#   CRON_SECRET  /api/cron/market-prices 라우트와 값이 같아야 함 (Vercel 환경 변수 CRON_SECRET과 동일한 값)
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 더보기 재료 시세 갱신 요청
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cron/market-prices" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

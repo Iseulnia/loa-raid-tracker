@@ -54,7 +54,8 @@ export default function LoaToolsTabs() {
           <h2 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">더보기 효율</h2>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
             관문별 더보기(추가 보상 구매)에 필요한 골드와, 실시간 거래소 시세로 환산한 보상 가치를 비교해서
-            이득/손해를 보여줘요. &ldquo;현재가 갱신&rdquo;을 눌러야 최신 시세로 계산돼요.
+            이득/손해를 보여줘요. 3시간마다 자동으로 시세가 갱신되고, &ldquo;현재가 갱신&rdquo;을 누르면 그
+            자리에서 바로 최신 시세로 다시 계산돼요.
           </p>
           <MoreRewardsEfficiency />
         </section>

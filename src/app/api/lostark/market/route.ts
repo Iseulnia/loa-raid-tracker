@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { searchMarketItemsByCategory, LostArkApiError } from "@/lib/lostark";
-
-// 재련 재료 카테고리 — 더보기 보상으로 나오는 파괴석/수호석/돌파석/파편 주머니류가 모두 여기 속함.
-const MATERIAL_CATEGORY_CODE = 50010;
+import { LostArkApiError } from "@/lib/lostark";
+import { refreshMarketItemPrices } from "@/lib/marketPricesRefresh";
 
 type PriceMap = Record<number, { currentMinPrice: number; bundleCount: number }>;
 
@@ -47,27 +45,11 @@ export async function POST() {
   }
 
   try {
-    const items = await searchMarketItemsByCategory(MATERIAL_CATEGORY_CODE);
-    const now = new Date().toISOString();
-    const rows = items.map((it) => ({
-      item_id: it.Id,
-      item_name: it.Name,
-      current_min_price: it.CurrentMinPrice,
-      bundle_count: it.BundleCount,
-      updated_by: user.id,
-      updated_at: now,
-    }));
-
-    const { error } = await supabase.from("market_item_prices").upsert(rows, { onConflict: "item_id" });
-    if (error) {
-      console.error("[lostark/market] db upsert failed:", error);
-      return NextResponse.json({ error: "가격 저장에 실패했어요." }, { status: 500 });
-    }
-
+    const { items, updatedAt } = await refreshMarketItemPrices(supabase, user.id);
     const prices: PriceMap = Object.fromEntries(
       items.map((it) => [it.Id, { currentMinPrice: it.CurrentMinPrice, bundleCount: it.BundleCount }])
     );
-    return NextResponse.json({ prices, updatedAt: now });
+    return NextResponse.json({ prices, updatedAt });
   } catch (err) {
     console.error("[lostark/market] refresh failed:", err);
     if (err instanceof LostArkApiError) {
