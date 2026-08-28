@@ -113,7 +113,9 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
 
   // 왼쪽에 최고/최저가를 적어둘 여백(이 안에는 선/점을 절대 안 그림). 가격 자릿수가 늘어나면(예: 100만
   // 단위) 텍스트가 길어지므로, 라벨 글자 수에 맞춰 여백도 같이 넓어지게 해서 항상 선/점과 안 겹치게 한다.
-  const axisWidth = Math.max(42, Math.max(maxLabel.length, minLabel.length) * 5.5 + 8);
+  // (글자 폭 추정을 너무 빠듯하게 잡았더니 첫 날짜 라벨이 가운데 정렬 때문에 왼쪽으로 삐져나와 가격
+  // 라벨과 거의 붙어 보이는 문제가 있었음 — 여백을 넉넉히 키우고, 날짜 라벨도 양 끝은 안쪽으로 붙게 정렬함.)
+  const axisWidth = Math.max(50, Math.max(maxLabel.length, minLabel.length) * 7 + 16);
 
   const xOf = (i: number) => axisWidth + pad + (i / (series.length - 1)) * (width - axisWidth - pad * 2);
 
@@ -143,12 +145,15 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
       </text>
       {series.map((p, i) => {
         const isToday = i === series.length - 1;
+        // 맨 왼쪽/맨 오른쪽 날짜는 가운데 정렬하면 절반이 바깥(왼쪽 가격 라벨 쪽 / 오른쪽 그래프 밖)으로
+        // 삐져나가므로 안쪽으로 붙여서 정렬한다.
+        const anchor = i === 0 ? "start" : i === series.length - 1 ? "end" : "middle";
         return (
           <text
             key={p.date}
             x={xOf(i)}
             y={height - 2}
-            textAnchor="middle"
+            textAnchor={anchor}
             className={
               isToday
                 ? "fill-neutral-600 text-[9px] font-semibold tabular-nums dark:fill-neutral-300"
