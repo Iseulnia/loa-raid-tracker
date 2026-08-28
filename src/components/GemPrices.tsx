@@ -116,8 +116,13 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
   // (글자 폭 추정을 너무 빠듯하게 잡았더니 첫 날짜 라벨이 가운데 정렬 때문에 왼쪽으로 삐져나와 가격
   // 라벨과 거의 붙어 보이는 문제가 있었음 — 여백을 넉넉히 키우고, 날짜 라벨도 양 끝은 안쪽으로 붙게 정렬함.)
   const axisWidth = Math.max(50, Math.max(maxLabel.length, minLabel.length) * 7 + 16);
+  // 맨 오른쪽 날짜 라벨("8/29" 등, 가운데 정렬)이 그래프 밖으로 삐져나가지 않도록 오른쪽에도 작게 여백을 둠.
+  const rightMargin = 12;
 
-  const xOf = (i: number) => axisWidth + pad + (i / (series.length - 1)) * (width - axisWidth - pad * 2);
+  // 점과 그 아래 날짜 라벨이 항상 같은 x좌표를 공유하고(= 점이 라벨 정가운데 위에 오고), 간격도 균일하게
+  // 나오도록 전부 같은 계산식으로 좌표를 구한다(라벨마다 정렬 방식을 다르게 하면 그 방식 차이 때문에
+  // 점과 라벨 중심이 어긋나 보이고 칸 간격도 고르지 않아 보였음).
+  const xOf = (i: number) => axisWidth + pad + (i / (series.length - 1)) * (width - axisWidth - pad - rightMargin);
 
   // series 안에서의 인덱스(0~6)를 그대로 x좌표로 써서, 데이터 없는 날은 자연스럽게 건너뛴다.
   const indexByDate = new Map(series.map((p, i) => [p.date, i]));
@@ -148,15 +153,12 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
         // 가격 라벨 여백 때문에 그래프 폭이 줄어서, 날짜 7개를 전부 넣으면 글자끼리 겹친다. 글자 수를
         // 줄이는 대신 라벨 "개수"를 하루걸러 하나씩만(오늘은 항상) 보여줘서 칸마다 넉넉한 폭을 확보한다.
         if (!isToday && i % 2 !== 0) return null;
-        // 맨 왼쪽/맨 오른쪽 날짜는 가운데 정렬하면 절반이 바깥(왼쪽 가격 라벨 쪽 / 오른쪽 그래프 밖)으로
-        // 삐져나가므로 안쪽으로 붙여서 정렬한다.
-        const anchor = i === 0 ? "start" : i === series.length - 1 ? "end" : "middle";
         return (
           <text
             key={p.date}
             x={xOf(i)}
             y={height - 2}
-            textAnchor={anchor}
+            textAnchor="middle"
             className={
               isToday
                 ? "fill-neutral-600 text-[9px] font-semibold tabular-nums dark:fill-neutral-300"
