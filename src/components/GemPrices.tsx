@@ -145,6 +145,9 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
       </text>
       {series.map((p, i) => {
         const isToday = i === series.length - 1;
+        // 가격 라벨 여백 때문에 그래프 폭이 줄어서, 날짜 7개를 전부 넣으면 글자끼리 겹친다. 글자 수를
+        // 줄이는 대신 라벨 "개수"를 하루걸러 하나씩만(오늘은 항상) 보여줘서 칸마다 넉넉한 폭을 확보한다.
+        if (!isToday && i % 2 !== 0) return null;
         // 맨 왼쪽/맨 오른쪽 날짜는 가운데 정렬하면 절반이 바깥(왼쪽 가격 라벨 쪽 / 오른쪽 그래프 밖)으로
         // 삐져나가므로 안쪽으로 붙여서 정렬한다.
         const anchor = i === 0 ? "start" : i === series.length - 1 ? "end" : "middle";
