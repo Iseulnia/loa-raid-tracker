@@ -84,12 +84,13 @@ function formatDayLabel(dayKeyStr: string): string {
 }
 
 /** 별도 라이브러리 없이 7일 추이를 그리는 작은 선 그래프. 데이터 없는 날은 이어지지 않고 끊어서 표시하고,
- *  아래엔 날짜(M/D), 오른쪽엔 최고/최저가를 같이 표시해서 그래프만 덩그러니 있지 않게 한다. 오늘 날짜는 굵게 강조. */
+ *  아래엔 날짜(M/D), 왼쪽엔 최고/최저가를 같이 표시해서 그래프만 덩그러니 있지 않게 한다. 오늘 날짜는 굵게 강조.
+ *  가격 라벨을 그래프 영역 오른쪽 끝에 겹쳐 두면 점이 적을 때(2~3개) 선·점과 그대로 겹쳐버려서, 아예 별도
+ *  여백 칸으로 분리해 왼쪽에 둔다 — 데이터가 몇 개든 절대 선/점과 안 겹침. */
 function TrendSparkline({ series }: { series: { date: string; avg: number | null }[] }) {
   const points = series.filter((p) => p.avg !== null) as { date: string; avg: number }[];
   const width = 230;
-  const axisWidth = 42; // 오른쪽에 최고/최저가를 적어둘 여백
-  const chartWidth = width - axisWidth;
+  const axisWidth = 42; // 왼쪽에 최고/최저가를 적어둘 여백(이 안에는 선/점을 절대 안 그림)
   const chartHeight = 40;
   const labelHeight = 14;
   const height = chartHeight + labelHeight;
@@ -108,7 +109,7 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
   const max = Math.max(...values);
   const range = Math.max(1, max - min);
 
-  const xOf = (i: number) => pad + (i / (series.length - 1)) * (chartWidth - pad * 2);
+  const xOf = (i: number) => axisWidth + pad + (i / (series.length - 1)) * (width - axisWidth - pad * 2);
 
   // series 안에서의 인덱스(0~6)를 그대로 x좌표로 써서, 데이터 없는 날은 자연스럽게 건너뛴다.
   const indexByDate = new Map(series.map((p, i) => [p.date, i]));
@@ -127,12 +128,12 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
       {coords.map((c, i) => (
         <circle key={i} cx={c.x} cy={c.y} r={2} className="fill-neutral-500 dark:fill-neutral-400" />
       ))}
-      {/* 오른쪽 세로축: 이 7일 구간의 최고가(위)/최저가(아래). 카드 위쪽의 상승=빨강/하락=파랑 배지와
+      {/* 왼쪽 세로축: 이 7일 구간의 최고가(위)/최저가(아래). 카드 위쪽의 상승=빨강/하락=파랑 배지와
           혼동되지 않게 여기선 방향성 없는 중립 색으로 표시한다. */}
-      <text x={width - 1} y={pad + 6} textAnchor="end" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
+      <text x={2} y={pad + 6} textAnchor="start" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
         {formatPrice(max)}
       </text>
-      <text x={width - 1} y={chartHeight - 1} textAnchor="end" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
+      <text x={2} y={chartHeight - 1} textAnchor="start" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
         {formatPrice(min)}
       </text>
       {series.map((p, i) => {
