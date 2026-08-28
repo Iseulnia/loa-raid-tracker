@@ -84,10 +84,12 @@ function formatDayLabel(dayKeyStr: string): string {
 }
 
 /** 별도 라이브러리 없이 7일 추이를 그리는 작은 선 그래프. 데이터 없는 날은 이어지지 않고 끊어서 표시하고,
- *  아래에 날짜(M/D)를 같이 표시해서 그래프만 덩그러니 있지 않게 한다. 오늘은 굵게 강조. */
+ *  아래엔 날짜(M/D), 오른쪽엔 최고/최저가를 같이 표시해서 그래프만 덩그러니 있지 않게 한다. 오늘 날짜는 굵게 강조. */
 function TrendSparkline({ series }: { series: { date: string; avg: number | null }[] }) {
   const points = series.filter((p) => p.avg !== null) as { date: string; avg: number }[];
-  const width = 220;
+  const width = 230;
+  const axisWidth = 42; // 오른쪽에 최고/최저가를 적어둘 여백
+  const chartWidth = width - axisWidth;
   const chartHeight = 40;
   const labelHeight = 14;
   const height = chartHeight + labelHeight;
@@ -106,7 +108,7 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
   const max = Math.max(...values);
   const range = Math.max(1, max - min);
 
-  const xOf = (i: number) => pad + (i / (series.length - 1)) * (width - pad * 2);
+  const xOf = (i: number) => pad + (i / (series.length - 1)) * (chartWidth - pad * 2);
 
   // series 안에서의 인덱스(0~6)를 그대로 x좌표로 써서, 데이터 없는 날은 자연스럽게 건너뛴다.
   const indexByDate = new Map(series.map((p, i) => [p.date, i]));
@@ -117,6 +119,7 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
     return { x, y };
   });
   const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(" ");
+  const formatPrice = (v: number) => `${Math.round(v).toLocaleString()}G`;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-[62px] w-full">
@@ -124,6 +127,14 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
       {coords.map((c, i) => (
         <circle key={i} cx={c.x} cy={c.y} r={2} className="fill-neutral-500 dark:fill-neutral-400" />
       ))}
+      {/* 오른쪽 세로축: 이 7일 구간의 최고가(위)/최저가(아래). 카드 위쪽의 상승=빨강/하락=파랑 배지와
+          혼동되지 않게 여기선 방향성 없는 중립 색으로 표시한다. */}
+      <text x={width - 1} y={pad + 6} textAnchor="end" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
+        {formatPrice(max)}
+      </text>
+      <text x={width - 1} y={chartHeight - 1} textAnchor="end" className="fill-neutral-500 text-[9px] font-medium tabular-nums dark:fill-neutral-400">
+        {formatPrice(min)}
+      </text>
       {series.map((p, i) => {
         const isToday = i === series.length - 1;
         return (
