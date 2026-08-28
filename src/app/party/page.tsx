@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentWeekKey, getTimeUntilReset } from "@/lib/week";
+import { loadDashboardData } from "@/lib/dashboardData";
 import Dashboard from "@/components/Dashboard";
 
 export default async function PartyPage() {
@@ -14,26 +15,10 @@ export default async function PartyPage() {
 
   const weekKey = getCurrentWeekKey();
 
-  const [{ data: profiles }, { data: characters }, { data: raids }, { data: checks }, { data: characterRaids }] =
-    await Promise.all([
-      supabase.from("profiles").select("id, nickname"),
-      supabase
-        .from("characters")
-        .select(
-          "id, owner_id, name, server, class, item_level, combat_power, class_engraving, is_gold_earner, expedition_label, is_main_character, sort_order"
-        )
-        .order("sort_order"),
-      supabase
-        .from("raids")
-        .select("id, name, difficulty, min_item_level, gate_count, gold_per_gate, sort_order, is_active")
-        .eq("is_active", true)
-        .order("sort_order"),
-      supabase
-        .from("weekly_checks")
-        .select("id, character_id, raid_id, gate_number, week_key, checked_by")
-        .eq("week_key", weekKey),
-      supabase.from("character_raids").select("character_id, raid_id, is_gold_earning"),
-    ]);
+  const { profiles, characters, raids, checks, characterRaids, loadWarning } = await loadDashboardData(
+    supabase,
+    weekKey
+  );
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
@@ -48,15 +33,21 @@ export default async function PartyPage() {
         사람 캐릭터는 보기만 가능해요.
       </p>
 
+      {loadWarning && (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">
+          ⚠ {loadWarning}
+        </p>
+      )}
+
       <Dashboard
         mode="party"
         currentUserId={user.id}
         weekKey={weekKey}
-        profiles={profiles ?? []}
-        characters={characters ?? []}
-        raids={raids ?? []}
-        initialChecks={checks ?? []}
-        initialCharacterRaids={characterRaids ?? []}
+        profiles={profiles}
+        characters={characters}
+        raids={raids}
+        initialChecks={checks}
+        initialCharacterRaids={characterRaids}
       />
     </main>
   );
