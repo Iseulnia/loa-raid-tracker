@@ -77,6 +77,16 @@ Vercel에 이 저장소를 연결하고 위 3개 환경 변수(`NEXT_PUBLIC_SUPA
 4. 저장소에 푸시하면 두 워크플로가 각자 주기대로 자동 실행됩니다. **Actions** 탭에서 워크플로 이름을
    눌러 `Run workflow`로 바로 한 번씩 테스트해볼 수 있어요.
 
+### GitHub Actions의 schedule이 안 돌 때 — Supabase 자체 크론으로 대체
+
+GitHub Actions의 schedule 트리거는 (2026-08-28 기준) 이 저장소에서 등록 직후 첫 실행 이후로 다시
+안 도는 문제가 있었습니다(GitHub 쪽 인프라 이슈로 추정, `supabase/WORK_LOG.md` 참고). 새 외부
+서비스에 가입하지 않고도 대체할 수 있는 방법으로, 이미 쓰고 있는 Supabase 프로젝트 자체의
+스케줄러(`pg_cron` + `pg_net`)로 같은 `/api/cron/*` 라우트를 두드리게 할 수 있습니다.
+[supabase/setup_pg_cron.sql](supabase/setup_pg_cron.sql)의 안내를 따라 Supabase **SQL Editor**에서
+실행하세요(파일 안의 `REPLACE_WITH_CRON_SECRET`를 실제 값으로 바꿔서 실행하되, **그 상태로 커밋은
+하지 마세요** — 시크릿이 저장소에 노출됩니다).
+
 ## 레이드 마스터 목록 관리
 
 레이드 이름/난이도/필요 아이템레벨/골드는 `supabase/schema.sql` 안에 시드 데이터로 들어있고, 앱 안에 이걸

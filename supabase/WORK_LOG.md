@@ -838,6 +838,32 @@
   눌러야 함. 앞으로도 이런 크론 문제를 자주 자가진단하게 하려면 PAT에 "Actions: Read and write" 권한을
   추가해달라고 요청하는 게 좋음(다음에 비슷한 문제가 또 나오면 사용자에게 물어볼 것).
 
+### 후속: 오프셋 변경으로도 안 풀려서 더 파고든 결과 (같은 날 이어서)
+
+- 사용자가 PAT에 "Actions: Read and write"까지 추가해줘서, 이후로는 workflow_dispatch 즉시 실행과
+  disable/enable 토글을 내가 직접 API로 할 수 있게 됨.
+- **disable → enable 재등록도 효과 없었음**: 토글 직후에도 다음 예정 시각(15:07 UTC)이 지나도 자동
+  실행 안 됨 — `curl .../actions/workflows/{id}/runs?event=schedule`로 5~10분 간격 반복 확인.
+- **GitHub 상태 페이지에서 결정적 단서 발견**: `https://www.githubstatus.com/api/v2/incidents.json`을
+  조회해보니, 이 워크플로들을 만들던 바로 그 시점(2026-08-26~27)에 GitHub Actions가 실제로 여러 번
+  장애를 겪고 있었음 — 특히 8/26 15:11~18:01 UTC(critical)는 공식 사후분석에 "Actions 워크플로
+  **트리거를 처리하는 서비스가 쓰는 DB primary의 write 포화**"라고 명시돼 있어 스케줄 등록 자체와
+  직결됨. 여기에 8/26 23:37~8/27 19:44 UTC billing 장애까지 겹쳤고, 보석 워크플로는 이 billing 장애가
+  채 안 끝난 8/27 17:52 UTC에 만들어짐 — 등록 시점에 GitHub 트리거 처리 파이프라인이 불안정했던 것과
+  타이밍이 정확히 맞아떨어짐.
+- **파일명을 바꿔 완전히 새 workflow_id로 재등록**(`gem-price-cron.yml` → `-v2.yml`,
+  `market-price-cron.yml` → `-v2.yml`)해봤지만, **이 새 workflow_id도 첫 예정 시각에 자동 실행 안 됨**
+  (실행 이력이 0건인 완전히 새 워크플로인데도). 이 결과로 "예전 workflow_id에 낀 문제"라는 가설은 약해짐.
+- **재해석**: 최초 워크플로도 생성 후 8.5시간 뒤에야 처음 한 번 돌았던 전례를 보면, GitHub의 schedule은
+  "새로 등록된 뒤 첫 실행까지 몇 시간씩 걸릴 수 있는" 것일 가능성이 있음. 그런데 20~40분 간격으로
+  계속 파일을 고치고 재등록시키면서 매번 그 대기를 리셋시켰을 수 있어, **잦은 재시도 자체가 오히려
+  역효과였을 가능성**을 배제 못 함. 확정적인 결론은 못 내림.
+- **최종 대안(사용자 요청 — 외부 크론 서비스 가입 없이 해결)**: 이미 쓰고 있는 Supabase 프로젝트 자체의
+  `pg_cron`(스케줄) + `pg_net`(HTTP 호출) 확장으로 같은 `/api/cron/*` 라우트를 두드리게 함 —
+  [supabase/setup_pg_cron.sql](setup_pg_cron.sql) 참고. CRON_SECRET은 Supabase Vault(`vault.create_secret`)에
+  저장해서 저장소에는 절대 평문으로 커밋 안 되게 함. GitHub Actions 워크플로는 그대로 남겨둠(혹시
+  나중에 스스로 돌기 시작해도 무해 — 갱신 로직 자체가 upsert라 중복 호출돼도 안전함).
+
 ## 새 세션에서 작업 재개할 때 체크리스트
 
 1. 이 파일과 [README.md](../README.md)를 먼저 읽기
