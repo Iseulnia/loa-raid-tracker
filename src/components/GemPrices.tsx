@@ -90,7 +90,6 @@ function formatDayLabel(dayKeyStr: string): string {
 function TrendSparkline({ series }: { series: { date: string; avg: number | null }[] }) {
   const points = series.filter((p) => p.avg !== null) as { date: string; avg: number }[];
   const width = 230;
-  const axisWidth = 42; // 왼쪽에 최고/최저가를 적어둘 여백(이 안에는 선/점을 절대 안 그림)
   const chartHeight = 40;
   const labelHeight = 14;
   const height = chartHeight + labelHeight;
@@ -108,6 +107,13 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = Math.max(1, max - min);
+  const formatPrice = (v: number) => `${Math.round(v).toLocaleString()}G`;
+  const maxLabel = formatPrice(max);
+  const minLabel = formatPrice(min);
+
+  // 왼쪽에 최고/최저가를 적어둘 여백(이 안에는 선/점을 절대 안 그림). 가격 자릿수가 늘어나면(예: 100만
+  // 단위) 텍스트가 길어지므로, 라벨 글자 수에 맞춰 여백도 같이 넓어지게 해서 항상 선/점과 안 겹치게 한다.
+  const axisWidth = Math.max(42, Math.max(maxLabel.length, minLabel.length) * 5.5 + 8);
 
   const xOf = (i: number) => axisWidth + pad + (i / (series.length - 1)) * (width - axisWidth - pad * 2);
 
@@ -120,7 +126,6 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
     return { x, y };
   });
   const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(" ");
-  const formatPrice = (v: number) => `${Math.round(v).toLocaleString()}G`;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-[62px] w-full">
