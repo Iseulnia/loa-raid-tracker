@@ -7,10 +7,14 @@ name: 보석 시세 자동 기록
 #   APP_URL      배포된 앱 주소 (예: https://your-app.vercel.app, 끝에 / 없이)
 #   CRON_SECRET  /api/cron/gem-prices 라우트와 값이 같아야 함 (Vercel 환경 변수 CRON_SECRET과 동일한 값)
 
+# 2026-08-28: 최초 등록 직후(8/27) GitHub Actions 트리거 처리 서비스에 장애(DB primary 포화, 이후
+# billing 장애까지 겹침, https://www.githubstatus.com 8/26~8/27 인시던트)가 있었던 여파로 추정 —
+# 이 워크플로가 스케줄 등록 직후 딱 1번만 돌고 그 뒤로 전혀 안 돎(offset 조정, disable/enable 재등록
+# 다 시도했지만 안 풀림). 파일명을 통째로 바꿔서 새 workflow_id로 다시 등록시킴(gem-price-cron.yml → -v2).
+
 on:
   schedule:
-    # 정각(:00)은 전 세계 스케줄이 몰려서 지연되거나 아예 건너뛰기 쉽다고 GitHub 문서에 나와 있어서
-    # 매시 7분으로 살짝 비껴둠 (2026-08-28: 정각으로 걸어뒀더니 최초 1회만 돌고 그 뒤로 안 돌던 문제 확인).
+    # 정각(:00)은 전 세계 스케줄이 몰려서 지연되거나 아예 건너뛰기 쉽다고 GitHub 문서에 나와 있어서 매시 7분으로 비껴둠
     - cron: "7 * * * *"
   workflow_dispatch: {}
 

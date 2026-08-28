@@ -59,8 +59,8 @@ Vercel에 이 저장소를 연결하고 위 3개 환경 변수(`NEXT_PUBLIC_SUPA
 
 로아 도구의 보석 가격 / 더보기 효율 탭은 각자 "현재가 갱신" 버튼을 눌러야 시세가 기록되는데, 아무도
 안 눌러도 자동으로 기록되게 하려면 GitHub Actions 스케줄러
-([.github/workflows/gem-price-cron.yml](.github/workflows/gem-price-cron.yml) — 보석, 1시간마다,
-[.github/workflows/market-price-cron.yml](.github/workflows/market-price-cron.yml) — 더보기 재료,
+([.github/workflows/gem-price-cron-v2.yml](.github/workflows/gem-price-cron-v2.yml) — 보석, 1시간마다,
+[.github/workflows/market-price-cron-v2.yml](.github/workflows/market-price-cron-v2.yml) — 더보기 재료,
 3시간마다)를 씁니다(Vercel Hobby 요금제의 Cron은 하루 1번으로 제한돼 있어서 대신 씀). 설정 안 해도 앱
 자체는 정상 동작하고, 그냥 자동 기록만 안 될 뿐입니다.
 

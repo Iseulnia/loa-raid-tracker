@@ -7,11 +7,12 @@ name: 더보기 재료 시세 자동 기록
 #   APP_URL      배포된 앱 주소 (예: https://your-app.vercel.app, 끝에 / 없이)
 #   CRON_SECRET  /api/cron/market-prices 라우트와 값이 같아야 함 (Vercel 환경 변수 CRON_SECRET과 동일한 값)
 
+# 2026-08-28: 보석 워크플로와 같은 이유로 파일명을 바꿔서 재등록함 — gem-price-cron-v2.yml 상단 주석 참고.
+
 on:
   schedule:
     # 정각(:00)은 전 세계 스케줄이 몰려서 지연되거나 아예 건너뛰기 쉽다고 GitHub 문서에 나와 있어서
     # 22분으로 비껴두고, 보석 워크플로(매시 7분)와도 안 겹치게 함
-    # (2026-08-28: 정각으로 걸어뒀더니 최초 1회만 돌고 그 뒤로 안 돌던 문제 확인).
     - cron: "22 */3 * * *"
   workflow_dispatch: {}
 
