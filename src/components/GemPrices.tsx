@@ -77,11 +77,20 @@ function DiffBadge({ diff }: { diff: number | null }) {
   );
 }
 
-/** 별도 라이브러리 없이 7일 추이를 그리는 작은 선 그래프. 데이터 없는 날은 이어지지 않고 끊어서 표시한다. */
+/** dayKey()가 만든 "YYYY-M-D"(월은 0부터 시작)를 "M/D" 표시용 문자열로 바꾼다. */
+function formatDayLabel(dayKeyStr: string): string {
+  const [, month0, day] = dayKeyStr.split("-");
+  return `${Number(month0) + 1}/${day}`;
+}
+
+/** 별도 라이브러리 없이 7일 추이를 그리는 작은 선 그래프. 데이터 없는 날은 이어지지 않고 끊어서 표시하고,
+ *  아래에 날짜(M/D)를 같이 표시해서 그래프만 덩그러니 있지 않게 한다. 오늘은 굵게 강조. */
 function TrendSparkline({ series }: { series: { date: string; avg: number | null }[] }) {
   const points = series.filter((p) => p.avg !== null) as { date: string; avg: number }[];
   const width = 220;
-  const height = 48;
+  const chartHeight = 40;
+  const labelHeight = 14;
+  const height = chartHeight + labelHeight;
   const pad = 4;
 
   if (points.length < 2) {
@@ -97,22 +106,42 @@ function TrendSparkline({ series }: { series: { date: string; avg: number | null
   const max = Math.max(...values);
   const range = Math.max(1, max - min);
 
+  const xOf = (i: number) => pad + (i / (series.length - 1)) * (width - pad * 2);
+
   // series 안에서의 인덱스(0~6)를 그대로 x좌표로 써서, 데이터 없는 날은 자연스럽게 건너뛴다.
   const indexByDate = new Map(series.map((p, i) => [p.date, i]));
   const coords = points.map((p) => {
     const i = indexByDate.get(p.date)!;
-    const x = pad + (i / (series.length - 1)) * (width - pad * 2);
-    const y = height - pad - ((p.avg - min) / range) * (height - pad * 2);
+    const x = xOf(i);
+    const y = chartHeight - pad - ((p.avg - min) / range) * (chartHeight - pad * 2);
     return { x, y };
   });
   const path = coords.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-12 w-full">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-[62px] w-full">
       <path d={path} fill="none" stroke="currentColor" strokeWidth={1.5} className="text-neutral-400 dark:text-neutral-500" />
       {coords.map((c, i) => (
         <circle key={i} cx={c.x} cy={c.y} r={2} className="fill-neutral-500 dark:fill-neutral-400" />
       ))}
+      {series.map((p, i) => {
+        const isToday = i === series.length - 1;
+        return (
+          <text
+            key={p.date}
+            x={xOf(i)}
+            y={height - 2}
+            textAnchor="middle"
+            className={
+              isToday
+                ? "fill-neutral-600 text-[9px] font-semibold tabular-nums dark:fill-neutral-300"
+                : "fill-neutral-400 text-[9px] tabular-nums dark:fill-neutral-500"
+            }
+          >
+            {formatDayLabel(p.date)}
+          </text>
+        );
+      })}
     </svg>
   );
 }
