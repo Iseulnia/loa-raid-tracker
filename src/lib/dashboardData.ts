@@ -31,16 +31,45 @@ async function queryWithRetry<T>(
   return { data: null, failed: true };
 }
 
+// Supabase(PostgREST)는 한 번의 조회에서 최대 1,000행까지만 돌려주고, 넘치면 조용히 잘라서 준다(에러 아님).
+// 친구 10명 × 캐릭터 10개 × 레이드 10개면 character_raids가 1,000행에 근접하고, weekly_checks도 마찬가지라
+// 언젠가 "일부 캐릭터의 숙제/체크만 통째로 안 보이는" 형태로 터질 수 있다. 실제로 보석 시세 쪽에서 같은
+// 한도에 걸려 최신 기록이 잘려나가던 게 확인돼서(2026-09-04), 커질 수 있는 테이블은 미리 나눠서 가져온다.
+// 한도(1,000)보다 작게 잡아야 "받은 개수 < 요청 개수 = 마지막 페이지"라는 판단이 항상 맞다.
+const PAGE_SIZE = 500;
+const MAX_PAGES = 40;
+
+/** 페이지를 나눠 전부 가져온다. 페이지 경계가 어긋나지 않도록 호출부에서 반드시 고유 키로 정렬해야 한다. */
+async function queryAllPagesWithRetry<T>(
+  label: string,
+  runRange: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<{ data: T[] | null; failed: boolean }> {
+  const all: T[] = [];
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, failed } = await queryWithRetry(`${label}[${from}~]`, () => runRange(from, from + PAGE_SIZE - 1));
+    if (failed) return { data: null, failed: true };
+    const batch = data ?? [];
+    all.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+    from += batch.length;
+  }
+  return { data: all, failed: false };
+}
+
 export async function loadDashboardData(supabase: SupabaseClient<Database>, weekKey: string) {
   const [profiles, characters, raids, checks, characterRaids] = await Promise.all([
+    // profiles/raids는 행 수가 수십 개 수준으로 고정이라 한 번에 가져와도 한도에 안 걸린다.
     queryWithRetry("profiles", () => supabase.from("profiles").select("id, nickname")),
-    queryWithRetry("characters", () =>
+    queryAllPagesWithRetry("characters", (from, to) =>
       supabase
         .from("characters")
         .select(
           "id, owner_id, name, server, class, item_level, combat_power, class_engraving, is_gold_earner, expedition_label, is_main_character, sort_order"
         )
         .order("sort_order")
+        .order("id") // sort_order는 사람마다 겹칠 수 있어서 페이지 경계가 흔들리지 않게 고유 키로 한 번 더 정렬
+        .range(from, to)
     ),
     queryWithRetry("raids", () =>
       supabase
@@ -49,14 +78,16 @@ export async function loadDashboardData(supabase: SupabaseClient<Database>, week
         .eq("is_active", true)
         .order("sort_order")
     ),
-    queryWithRetry("weekly_checks", () =>
+    queryAllPagesWithRetry("weekly_checks", (from, to) =>
       supabase
         .from("weekly_checks")
         .select("id, character_id, raid_id, gate_number, week_key, checked_by")
         .eq("week_key", weekKey)
+        .order("id")
+        .range(from, to)
     ),
-    queryWithRetry("character_raids", () =>
-      supabase.from("character_raids").select("character_id, raid_id, is_gold_earning")
+    queryAllPagesWithRetry("character_raids", (from, to) =>
+      supabase.from("character_raids").select("character_id, raid_id, is_gold_earning").order("id").range(from, to)
     ),
   ]);
 

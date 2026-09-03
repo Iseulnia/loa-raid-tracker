@@ -188,7 +188,12 @@ export default function GemPrices() {
         if (!res.ok || cancelled) return;
         const rows = data.snapshots as Snapshot[];
         setSnapshots(rows);
-        if (rows.length > 0) setUpdatedAt(new Date(rows[rows.length - 1].recorded_at));
+        // 배열의 마지막 항목을 최신으로 믿지 않고 실제 최대값을 찾는다 — 예전에 서버가 조회 한도(1,000행)에
+        // 걸려 최신 기록을 잘라 보내던 때, 마지막 항목이 며칠 전 기록이라 "마지막 갱신"이 과거에 멈춰 보였음.
+        if (rows.length > 0) {
+          const latest = rows.reduce((a, b) => (a.recorded_at >= b.recorded_at ? a : b));
+          setUpdatedAt(new Date(latest.recorded_at));
+        }
       } catch {
         // 초기 로딩 실패는 조용히 무시 — 갱신 버튼으로 다시 시도할 수 있음
       }
