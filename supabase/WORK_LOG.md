@@ -899,9 +899,13 @@
 
 - **Supabase pg_cron이 주력이고 완벽하게 동작 중** — 보석은 매시 7분, 더보기 재료는 3시간마다 22분에
   정확히 실행됨(`cron.job_run_details`로 확인). 설정은 [setup_pg_cron.sql](setup_pg_cron.sql) 참고.
-- **GitHub Actions는 되살아났지만 여전히 불규칙** — 8/28엔 아예 안 돌다가 지금은 돌긴 하는데 "매시 7분"이
-  전혀 안 지켜지고 하루 5번(4~5시간 간격) 정도만 실행됨. 없어도 되지만 중복 호출돼도 무해해서(upsert/
-  스냅샷 추가) 예비용으로 그냥 둠. 정리하고 싶으면 워크플로 2개를 disable하면 됨.
+- **GitHub Actions 워크플로 2개는 2026-09-04에 disable 처리함** — 8/28엔 아예 안 돌다가 되살아난 뒤에도
+  "매시 7분"이 전혀 안 지켜지고 하루 5번(4~5시간 간격) 정도만 불규칙하게 실행됐음. pg_cron이 정확히
+  돌고 있어서 사용자 요청으로 껐음(API `PUT /actions/workflows/{id}/disable`, 상태 `disabled_manually`).
+  - 파일(`.github/workflows/*-v2.yml`)은 저장소에 그대로 남아있음. **비활성화 상태는 GitHub 쪽에
+    저장되는 것이라 파일을 고치거나 다시 push해도 자동으로 켜지지 않음.**
+  - 다시 켜려면 Actions 탭 → 워크플로 → `Enable workflow`, 또는 API `PUT .../enable`.
+  - 워크플로 ID: 보석 `344734488`, 더보기 재료 `344734491`.
 
 ## 새 세션에서 작업 재개할 때 체크리스트
 

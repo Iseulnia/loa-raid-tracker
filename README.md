@@ -57,35 +57,44 @@ Vercel에 이 저장소를 연결하고 위 3개 환경 변수(`NEXT_PUBLIC_SUPA
 
 ## 시세 자동 수집 설정 (선택)
 
-로아 도구의 보석 가격 / 더보기 효율 탭은 각자 "현재가 갱신" 버튼을 눌러야 시세가 기록되는데, 아무도
-안 눌러도 자동으로 기록되게 하려면 GitHub Actions 스케줄러
-([.github/workflows/gem-price-cron-v2.yml](.github/workflows/gem-price-cron-v2.yml) — 보석, 1시간마다,
-[.github/workflows/market-price-cron-v2.yml](.github/workflows/market-price-cron-v2.yml) — 더보기 재료,
-3시간마다)를 씁니다(Vercel Hobby 요금제의 Cron은 하루 1번으로 제한돼 있어서 대신 씀). 설정 안 해도 앱
-자체는 정상 동작하고, 그냥 자동 기록만 안 될 뿐입니다.
+로아 도구의 보석 가격 / 더보기 효율 탭은 원래 각자 "현재가 갱신" 버튼을 눌러야 시세가 기록되는데,
+아무도 안 눌러도 자동으로 기록되도록 스케줄러를 붙여뒀습니다. 설정 안 해도 앱 자체는 정상 동작하고,
+그냥 자동 기록만 안 될 뿐입니다. (Vercel Hobby 요금제의 Cron은 하루 1번으로 제한돼 있어서 못 씁니다.)
+
+**현재 쓰는 방식: Supabase 자체 스케줄러(`pg_cron` + `pg_net`)** — 보석은 매시 7분, 더보기 재료는
+3시간마다 22분에 앱의 `/api/cron/*` 라우트를 호출합니다. 설정 방법은
+[supabase/setup_pg_cron.sql](supabase/setup_pg_cron.sql)의 안내대로 Supabase **SQL Editor**에서
+실행하면 됩니다(파일 안의 `REPLACE_WITH_CRON_SECRET`를 실제 값으로 바꿔서 실행하되, **그 상태로 커밋은
+하지 마세요** — 시크릿이 저장소에 노출됩니다).
+
+사전 준비(둘 다 Vercel 환경 변수):
 
 1. Supabase **Project Settings → API Keys**(또는 **Data API → Settings**)에서 `service_role`(최신
    Supabase는 `secret`으로 표시될 수 있음) 키를 복사(⚠️ RLS를 전부 무시하는 강력한 키라 외부에 노출되면
-   안 됨 — 아래 두 곳에만 등록)해서 Vercel 프로젝트 환경 변수에 `SUPABASE_SERVICE_ROLE_KEY`로 등록
+   안 됨)해서 Vercel 프로젝트 환경 변수에 `SUPABASE_SERVICE_ROLE_KEY`로 등록
 2. 임의의 긴 문자열을 하나 만들어서(PowerShell에선 `openssl`이 기본으로 없으니
    `-join ((1..32) | ForEach-Object { "{0:x2}" -f (Get-Random -Minimum 0 -Maximum 256) })` 같은 걸로
-   대신 생성 가능) Vercel 환경 변수에 `CRON_SECRET`으로 등록
-3. GitHub 저장소 **Settings → Secrets and variables → Actions → Repository secrets**에서 시크릿 2개
-   등록(두 워크플로가 공유해서 씀):
-   - `APP_URL`: 배포된 앱 주소(끝에 `/` 없이, 예: `https://your-app.vercel.app`)
-   - `CRON_SECRET`: 2번에서 만든 값과 **동일하게**
-4. 저장소에 푸시하면 두 워크플로가 각자 주기대로 자동 실행됩니다. **Actions** 탭에서 워크플로 이름을
-   눌러 `Run workflow`로 바로 한 번씩 테스트해볼 수 있어요.
+   대신 생성 가능) Vercel 환경 변수에 `CRON_SECRET`으로 등록 — 이 값을 Supabase Vault에도 같이 넣습니다
 
-### GitHub Actions의 schedule이 안 돌 때 — Supabase 자체 크론으로 대체
+잘 도는지 확인하려면 Supabase SQL Editor에서:
 
-GitHub Actions의 schedule 트리거는 (2026-08-28 기준) 이 저장소에서 등록 직후 첫 실행 이후로 다시
-안 도는 문제가 있었습니다(GitHub 쪽 인프라 이슈로 추정, `supabase/WORK_LOG.md` 참고). 새 외부
-서비스에 가입하지 않고도 대체할 수 있는 방법으로, 이미 쓰고 있는 Supabase 프로젝트 자체의
-스케줄러(`pg_cron` + `pg_net`)로 같은 `/api/cron/*` 라우트를 두드리게 할 수 있습니다.
-[supabase/setup_pg_cron.sql](supabase/setup_pg_cron.sql)의 안내를 따라 Supabase **SQL Editor**에서
-실행하세요(파일 안의 `REPLACE_WITH_CRON_SECRET`를 실제 값으로 바꿔서 실행하되, **그 상태로 커밋은
-하지 마세요** — 시크릿이 저장소에 노출됩니다).
+```sql
+select jobid, status, return_message, start_time from cron.job_run_details order by start_time desc limit 15;
+```
+
+### GitHub Actions 워크플로는 현재 꺼져 있음
+
+`.github/workflows/gem-price-cron-v2.yml`, `market-price-cron-v2.yml`은 원래 이 용도로 만들었지만,
+이 저장소에서 GitHub의 schedule 트리거가 지독하게 불안정했습니다(2026-08-28엔 아예 안 돌았고, 되살아난
+뒤에도 "매시 7분"을 안 지키고 하루 5번 정도만 불규칙하게 실행됨 — 자세한 경위는
+[supabase/WORK_LOG.md](supabase/WORK_LOG.md) 참고). pg_cron이 정확하게 돌고 있어서 **2026-09-04에 두
+워크플로를 GitHub 쪽에서 disable 처리**했습니다.
+
+- 파일은 저장소에 남아있지만 실행되지 않습니다(비활성화 상태는 GitHub에 저장되는 것이라 파일을 고치거나
+  다시 push해도 켜지지 않습니다).
+- 다시 켜려면 저장소 **Actions** 탭 → 해당 워크플로 → `Enable workflow` 버튼.
+- 켤 경우 `APP_URL`, `CRON_SECRET` 두 저장소 시크릿(**Settings → Secrets and variables → Actions**)이
+  필요합니다.
 
 ## 레이드 마스터 목록 관리
 
