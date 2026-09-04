@@ -286,6 +286,19 @@ function normalize(s: string): string {
   return s.replace(/[^가-힣a-zA-Z0-9]/g, "");
 }
 
+// OCR은 "세로줄 한 획"으로 생긴 글자들을 자기들끼리 아주 자주 헷갈린다: 소문자 l, 대문자 I, 숫자 1,
+// 느낌표 !, 세로줄 |, 한글 호환 자모 ㅣ 등. 로아 닉네임에는 이런 글자가 흔하게 들어가는데(예: 미르니아ㅣ),
+// 그냥 normalize만 하면 `!`나 `|`, `ㅣ`는 통째로 삭제되고 `l`/`1`/`I`는 남아서 같은 이름이 서로 다른
+// 문자열이 돼버린다 — 실제로 닉네임 '미르니아l'이 '미르니아!'로 읽혀 자동 감지가 안 되는 문제가 있었다.
+// 그래서 캐릭터 이름을 비교할 때만 이 글자들을 하나로 접어서 같은 글자로 취급한다.
+// ⚠️ 레이드 쪽(matchRaidFromText)에는 절대 쓰면 안 된다 — 성당의 "1단계/2단계/3단계"처럼 숫자가 의미를
+// 가지는 값이 있어서, 1을 l로 접으면 난이도가 서로 뭉개진다.
+const VERTICAL_STROKE_CHARS = /[lIi1!|ㅣｌＩｉ１｜ⅰⅠ丨]/g;
+
+function normalizeCharacterName(s: string): string {
+  return normalize(s.replace(VERTICAL_STROKE_CHARS, "l"));
+}
+
 function levenshtein(a: string, b: string): number {
   const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
   for (let i = 0; i <= a.length; i++) dp[i][0] = i;
@@ -326,17 +339,28 @@ function findConfusableNames(normalizedNames: string[]): Set<string> {
 
 /** OCR로 읽은 텍스트(레벨 등 잡음이 섞여 있어도 됨)와 내 캐릭터 이름 목록을 비교해 가장 가까운 캐릭터를 찾는다. */
 export function matchCharacterName<T extends { id: string; name: string }>(ocrText: string, characters: T[]): T | null {
-  const normalizedOcr = normalize(ocrText);
+  const normalizedOcr = normalizeCharacterName(ocrText);
   if (!normalizedOcr) return null;
 
-  const contained = characters.find((c) => normalizedOcr.includes(normalize(c.name)));
-  if (contained) return contained;
+  // 이름이 통째로 들어있으면 그걸로 확정. 여러 개가 걸릴 수 있는데(예: "미르니아"와 "미르니아l"을 둘 다
+  // 갖고 있으면 OCR "미르니아l"에 두 이름이 모두 포함됨), 그럴 땐 더 긴 쪽이 더 구체적인 일치라 그쪽을
+  // 택한다. 길이까지 같은 서로 다른 캐릭터가 동시에 걸리면 구분할 근거가 없으니 매칭을 포기한다
+  // (엉뚱한 캐릭터에 체크가 들어가는 건 인식 실패보다 훨씬 나쁨).
+  const contained = characters.filter((c) => {
+    const name = normalizeCharacterName(c.name);
+    return name && normalizedOcr.includes(name);
+  });
+  if (contained.length > 0) {
+    const longest = Math.max(...contained.map((c) => normalizeCharacterName(c.name).length));
+    const best = contained.filter((c) => normalizeCharacterName(c.name).length === longest);
+    return best.length === 1 ? best[0] : null;
+  }
 
-  const confusableNames = findConfusableNames(characters.map((c) => normalize(c.name)));
+  const confusableNames = findConfusableNames(characters.map((c) => normalizeCharacterName(c.name)));
 
   let best: { character: T; dist: number } | null = null;
   for (const c of characters) {
-    const name = normalize(c.name);
+    const name = normalizeCharacterName(c.name);
     if (!name || confusableNames.has(name)) continue;
     const dist = levenshtein(normalizedOcr, name);
     if (!best || dist < best.dist) best = { character: c, dist };
