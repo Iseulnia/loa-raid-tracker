@@ -24,6 +24,9 @@ const CONFIRM_SCANS = 1;
 type AutoCheckEvent = {
   id: string;
   characterId: string;
+  // 스캔 도중에도 캐릭터가 자동으로 다시 잡힐 수 있어서(재감지), 지금 선택된 캐릭터가 아니라 "체크한
+  // 그 시점의 캐릭터 이름"을 기록에 그대로 남긴다.
+  characterName: string;
   raidId: string;
   raidLabel: string;
   at: number;
@@ -257,7 +260,8 @@ export default function AutoDetectRunner({
 
       if (!alreadyChecked) {
         triggeredKeysRef.current.add(key); // 이 스캔 세션 동안은 같은 (캐릭터,레이드)를 다시 안 쏨(중복 기록 방지)
-        setStatusText(`${raidLabel} 감지됨 → 자동 체크 중...`);
+        const detectedName = characters.find((c) => c.id === characterId)?.name;
+        setStatusText(`${detectedName ? `${detectedName} · ` : ""}${raidLabel} 감지됨 → 자동 체크 중...`);
         triggerAutoCheck(characterId, matched.id, raidLabel);
       }
     } catch {
@@ -273,14 +277,15 @@ export default function AutoDetectRunner({
 
   async function triggerAutoCheck(characterId: string, raidId: string, raidLabel: string) {
     const key = `${characterId}:${raidId}`;
+    const characterName = characters.find((c) => c.id === characterId)?.name ?? "알 수 없는 캐릭터";
     try {
       await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
       setCheckedSet((prev) => new Set(prev).add(key));
       setEvents((prev) => [
-        { id: `${Date.now()}`, characterId, raidId, raidLabel, at: Date.now(), undone: false },
+        { id: `${Date.now()}`, characterId, characterName, raidId, raidLabel, at: Date.now(), undone: false },
         ...prev,
       ]);
-      setStatusText(`${raidLabel} 자동 체크 완료`);
+      setStatusText(`${characterName} · ${raidLabel} 자동 체크 완료`);
     } catch {
       // 아주 가끔 서버 액션 처리 중 일시적인 오류로 실패하는 경우가 있어서, 잠깐 쉬었다가 한 번 더
       // 시도해본다(메뉴 감지의 applyFound와 동일한 재시도 패턴). 그래도 실패하면 이 세션에선 다시 안 쏜다
@@ -290,12 +295,12 @@ export default function AutoDetectRunner({
         await setRaidCheck({ characterId, raidId, gateNumber: 1, checked: true });
         setCheckedSet((prev) => new Set(prev).add(key));
         setEvents((prev) => [
-          { id: `${Date.now()}`, characterId, raidId, raidLabel, at: Date.now(), undone: false },
+          { id: `${Date.now()}`, characterId, characterName, raidId, raidLabel, at: Date.now(), undone: false },
           ...prev,
         ]);
-        setStatusText(`${raidLabel} 자동 체크 완료`);
+        setStatusText(`${characterName} · ${raidLabel} 자동 체크 완료`);
       } catch {
-        setStatusText(`${raidLabel} 자동 체크 실패`);
+        setStatusText(`${characterName} · ${raidLabel} 자동 체크 실패`);
       }
     }
   }
@@ -475,17 +480,24 @@ export default function AutoDetectRunner({
               <li
                 key={e.id}
                 className={[
-                  "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs",
+                  // 캐릭터 이름까지 들어가면서 줄이 길어져서, 좁은 화면에선 텍스트가 줄바꿈되더라도
+                  // "취소" 버튼은 찌그러지지 않도록 gap과 shrink-0을 준다.
+                  "flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs",
                   e.undone
                     ? "border-neutral-200 bg-neutral-50 text-neutral-400 line-through dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
                     : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
                 ].join(" ")}
               >
                 <span>
-                  {e.raidLabel} · {new Date(e.at).toLocaleTimeString()}
+                  <span className="font-semibold">{e.characterName}</span> · {e.raidLabel} ·{" "}
+                  {new Date(e.at).toLocaleTimeString()}
                 </span>
                 {!e.undone && (
-                  <button type="button" onClick={() => undoEvent(e)} className="text-red-500 hover:underline dark:text-red-400">
+                  <button
+                    type="button"
+                    onClick={() => undoEvent(e)}
+                    className="shrink-0 text-red-500 hover:underline dark:text-red-400"
+                  >
                     취소
                   </button>
                 )}
