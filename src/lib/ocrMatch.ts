@@ -321,11 +321,25 @@ function fuzzyThreshold(nameLength: number): number {
   return Math.max(1, Math.floor(nameLength / 4));
 }
 
-// 짧은 이름은 fuzzy 매칭을 아예 안 한다. 3글자 이름에서 한 글자를 봐주면 이름의 33%가 틀려도 통과라는
-// 뜻이라, OCR이 일부만 읽어낸 조각("니 아")이 '힐니아'로 잡히는 식의 오탐이 계속 났다. 특히 이 사람들
-// 닉네임은 '~니아'로 끝나는 게 많아서 꼬리만 읽혀도 그럴듯해 보이는 게 문제. 짧은 이름은 정확히 읽혔을
-// 때만(주변 잡음은 `contained`가 알아서 걸러줌) 인정한다.
-const MIN_FUZZY_NAME_LENGTH = 4;
+const SHORT_NAME_LENGTH = 4; // 이 길이 미만이면 "짧은 이름"으로 보고 조건을 더 깐깐하게 본다
+
+/**
+ * 이 후보 이름을 fuzzy 매칭 대상으로 삼을지, 삼는다면 몇 글자까지 봐줄지. 못 쓰면 null.
+ *
+ * 짧은 이름(3글자 이하)이 문제였다. 한 글자를 봐주면 이름의 33%가 틀려도 통과라 오탐이 심했는데,
+ * 그렇다고 fuzzy를 아예 막으면 한 글자만 잘못 읽혀도 자동 감지가 안 돼서 너무 불편했다. 실제로 위험한
+ * 건 두 경우가 섞여 있어서였다:
+ *   - 위험: OCR이 이름의 일부만 읽은 경우("니 아" → 3글자 중 두 글자만 읽음). 실제로 맞춘 글자가
+ *     두 개뿐인데 통과해버린다. 닉네임이 '~니아'로 끝나는 게 많아 꼬리만 읽혀도 그럴듯해 보인다.
+ *   - 안전: 길이는 같은데 한 글자만 다른 경우("내고쀼" → '내고뿌'). 세 글자를 다 읽어낸 상태에서
+ *     한 글자를 비슷한 글자로 잘못 읽은 것이라 훨씬 믿을 만하다.
+ * 그래서 짧은 이름은 "한 글자까지 봐주되, OCR 결과가 이름보다 짧으면(= 일부만 읽힌 것) 인정 안 함"으로
+ * 구분한다. 4글자 이상 이름은 글자 수에 여유가 있어서 기존대로 길이 기준 오차만 본다.
+ */
+function fuzzyAllowance(normalizedOcr: string, name: string): number | null {
+  if (name.length >= SHORT_NAME_LENGTH) return fuzzyThreshold(name.length);
+  return normalizedOcr.length >= name.length ? 1 : null;
+}
 
 /** 서로 이름이 아주 비슷한 캐릭터들끼리는(예: 키츠네아/키츠녜아/키츄네아처럼 한두 글자만 다름) OCR이
  *  한 글자만 잘못 읽어도 여러 후보가 동시에 "그럴듯하게" 가까워져서, 편집거리가 제일 작은 것 하나만 보고
@@ -370,12 +384,17 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
 
   const confusableNames = findConfusableNames(characters.map((c) => normalizeCharacterName(c.name)));
 
+  // 각 이름마다 자기 기준(fuzzyAllowance)을 통과한 후보만 남긴다. 기준을 못 넘긴 이름이 "제일 가깝다"는
+  // 이유로 자격 있는 다른 후보를 가리는 일이 없도록, 통과 여부를 이 루프 안에서 바로 판단한다.
   let best: { character: T; dist: number } | null = null;
   let secondBestDist = Infinity;
   for (const c of characters) {
     const name = normalizeCharacterName(c.name);
-    if (!name || name.length < MIN_FUZZY_NAME_LENGTH || confusableNames.has(name)) continue;
+    if (!name || confusableNames.has(name)) continue;
+    const allowance = fuzzyAllowance(normalizedOcr, name);
+    if (allowance === null) continue;
     const dist = levenshtein(normalizedOcr, name);
+    if (dist > allowance) continue;
     if (!best || dist < best.dist) {
       if (best) secondBestDist = best.dist;
       best = { character: c, dist };
@@ -387,9 +406,7 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
   // 나온 쓰레기 문자열은 어느 이름과도 딱히 가깝지 않아 이렇게 동점이 되기 쉬운데, 그때 아무거나 골라서
   // 엉뚱한 캐릭터에 체크가 들어가는 걸 막아준다.
   if (best && best.dist === secondBestDist) return null;
-  // 이름 길이 대비 편집거리가 너무 크면(전혀 다른 글자면) 매칭 포기
-  if (best && best.dist <= fuzzyThreshold(best.character.name.length)) return best.character;
-  return null;
+  return best?.character ?? null;
 }
 
 // 레이드 진행 중에도 레이드명·난이도 제목 표시줄은 계속 떠 있어서(클리어 전후 안 바뀜), 이름+난이도만
