@@ -311,9 +311,21 @@ function levenshtein(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
+// 이름 길이별로 몇 글자까지 틀린 걸 봐줄지. 예전엔 `ceil(길이 * 0.34)`였는데 이게 짧은 이름에서
+// 터무니없이 헐거웠다 — 3글자 이름이면 2글자까지 틀려도 통과라서, OCR이 실패해서 나온 쓰레기 문자열
+// "0 = 고 이"가 '내고뿌'로, "ㅁ ㅇ 앙"이 (자모가 정규화에서 삭제돼 '앙' 한 글자만 남았는데도) '밍키앙'으로
+// 잘못 매칭됐다. 반대로 4글자 이름들끼리는 threshold 2 때문에 서로 "헷갈리는 이름"으로 전부 묶여버려서
+// (findConfusableNames도 같은 함수를 씀) 한 글자 오독조차 못 잡아주는 문제도 같이 있었다.
+// 이제 "4글자당 1글자"만 봐준다: 3~7글자면 1글자, 8글자 이상이면 2글자.
 function fuzzyThreshold(nameLength: number): number {
-  return Math.max(1, Math.ceil(nameLength * 0.34));
+  return Math.max(1, Math.floor(nameLength / 4));
 }
+
+// 짧은 이름은 fuzzy 매칭을 아예 안 한다. 3글자 이름에서 한 글자를 봐주면 이름의 33%가 틀려도 통과라는
+// 뜻이라, OCR이 일부만 읽어낸 조각("니 아")이 '힐니아'로 잡히는 식의 오탐이 계속 났다. 특히 이 사람들
+// 닉네임은 '~니아'로 끝나는 게 많아서 꼬리만 읽혀도 그럴듯해 보이는 게 문제. 짧은 이름은 정확히 읽혔을
+// 때만(주변 잡음은 `contained`가 알아서 걸러줌) 인정한다.
+const MIN_FUZZY_NAME_LENGTH = 4;
 
 /** 서로 이름이 아주 비슷한 캐릭터들끼리는(예: 키츠네아/키츠녜아/키츄네아처럼 한두 글자만 다름) OCR이
  *  한 글자만 잘못 읽어도 여러 후보가 동시에 "그럴듯하게" 가까워져서, 편집거리가 제일 작은 것 하나만 보고
@@ -359,12 +371,22 @@ export function matchCharacterName<T extends { id: string; name: string }>(ocrTe
   const confusableNames = findConfusableNames(characters.map((c) => normalizeCharacterName(c.name)));
 
   let best: { character: T; dist: number } | null = null;
+  let secondBestDist = Infinity;
   for (const c of characters) {
     const name = normalizeCharacterName(c.name);
-    if (!name || confusableNames.has(name)) continue;
+    if (!name || name.length < MIN_FUZZY_NAME_LENGTH || confusableNames.has(name)) continue;
     const dist = levenshtein(normalizedOcr, name);
-    if (!best || dist < best.dist) best = { character: c, dist };
+    if (!best || dist < best.dist) {
+      if (best) secondBestDist = best.dist;
+      best = { character: c, dist };
+    } else if (dist < secondBestDist) {
+      secondBestDist = dist;
+    }
   }
+  // 1등과 2등이 똑같이 가까우면 둘 중 뭐가 맞는지 알 방법이 없으므로 매칭을 포기한다. OCR이 실패해서
+  // 나온 쓰레기 문자열은 어느 이름과도 딱히 가깝지 않아 이렇게 동점이 되기 쉬운데, 그때 아무거나 골라서
+  // 엉뚱한 캐릭터에 체크가 들어가는 걸 막아준다.
+  if (best && best.dist === secondBestDist) return null;
   // 이름 길이 대비 편집거리가 너무 크면(전혀 다른 글자면) 매칭 포기
   if (best && best.dist <= fuzzyThreshold(best.character.name.length)) return best.character;
   return null;

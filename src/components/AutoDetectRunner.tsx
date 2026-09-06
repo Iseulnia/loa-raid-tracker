@@ -20,6 +20,9 @@ const SCAN_INTERVAL_MS = 800; // 군단장 클리어 배너는 몇 초 안에 �
 // 레이드 이름+난이도 문자열이 둘 다 정확히 일치해야만 매칭되므로 이미 충분히 엄격해서 1번이면 충분함
 // (2번을 요구하면 짧게 스쳐 지나가는 배너를 아예 놓치는 문제가 있었음).
 const CONFIRM_SCANS = 1;
+// 캐릭터 이름은 연속 이만큼 같은 결과가 나와야 확정한다 — 레이드와 달리 한 번 잡으면 세션 내내 고정이라
+// 프레임 하나만 잘못 읽혀도 계속 엉뚱한 캐릭터로 남기 때문. 이름은 화면에 계속 떠 있어서 놓칠 일이 없다.
+const CONFIRM_CHARACTER_SCANS = 2;
 
 type AutoCheckEvent = {
   id: string;
@@ -70,6 +73,10 @@ export default function AutoDetectRunner({
   // (메뉴 감지처럼 캐릭터를 자주 바꿔가며 스캔하는 용도가 아니라, 한 캐릭터로 계속 도는 게 보통이라 매번
   // 재인식할 필요가 없음 — "재감지" 버튼을 눌렀을 때만 다시 풀림).
   const characterLockedRef = useRef(false);
+  // 캐릭터는 한 번 잡으면 "재감지"를 누르기 전까지 그 세션 내내 고정이라, 프레임 하나만 잘못 읽혀도 계속
+  // 엉뚱한 캐릭터로 남는다. 그래서 연속으로 같은 캐릭터가 나왔을 때만 확정한다(스캔 간격이 0.8초라
+  // 실제 체감 지연은 1초 미만). 레이드 배너와 달리 파티원 이름은 화면에 계속 떠 있어서 놓칠 걱정이 없다.
+  const pendingCharacterRef = useRef<{ id: string; count: number } | null>(null);
   const selectedCharacterIdRef = useRef(characters[0]?.id ?? "");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
@@ -112,6 +119,7 @@ export default function AutoDetectRunner({
    *  잡도록 잠금을 풀어준다. 스캔 중이면 다음 틱(최대 0.8초 뒤)에 바로 다시 읽는다. */
   function redetectCharacter() {
     characterLockedRef.current = false;
+    pendingCharacterRef.current = null;
     setAutoDetectedCharacterId(null);
     setCharacterOcrStatus("idle");
     setLastCharacterOcrText("");
@@ -143,6 +151,13 @@ export default function AutoDetectRunner({
       if (characterLockedRef.current) return; // OCR 처리 중 사용자가 수동으로 골랐으면 무시
 
       if (matched) {
+        // 직전 스캔과 같은 캐릭터일 때만 카운트를 올리고, 다른 게 나오면 처음부터 다시 센다.
+        const pending = pendingCharacterRef.current;
+        pendingCharacterRef.current =
+          pending && pending.id === matched.id ? { id: matched.id, count: pending.count + 1 } : { id: matched.id, count: 1 };
+
+        if (pendingCharacterRef.current.count < CONFIRM_CHARACTER_SCANS) return; // 아직 확정 전 — 다음 틱에 한 번 더 확인
+
         if (matched.id !== selectedCharacterIdRef.current) {
           selectedCharacterIdRef.current = matched.id;
           setSelectedCharacterId(matched.id);
@@ -151,6 +166,7 @@ export default function AutoDetectRunner({
         setCharacterOcrStatus("matched");
         characterLockedRef.current = true; // 한 번 잡았으면 "재감지" 누르기 전까진 다시 안 읽음
       } else {
+        pendingCharacterRef.current = null;
         setCharacterOcrStatus("no-match");
       }
     } catch {
@@ -176,6 +192,7 @@ export default function AutoDetectRunner({
         await videoRef.current.play();
       }
       characterLockedRef.current = false; // 새 스캔을 시작할 때마다 자동 인식에 다시 기회를 준다
+      pendingCharacterRef.current = null;
       setAutoDetectedCharacterId(null);
       setCharacterOcrStatus("idle");
       setSharing(true);
