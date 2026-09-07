@@ -23,6 +23,11 @@ const CONFIRM_SCANS = 1;
 // 캐릭터 이름은 연속 이만큼 같은 결과가 나와야 확정한다 — 레이드와 달리 한 번 잡으면 세션 내내 고정이라
 // 프레임 하나만 잘못 읽혀도 계속 엉뚱한 캐릭터로 남기 때문. 이름은 화면에 계속 떠 있어서 놓칠 일이 없다.
 const CONFIRM_CHARACTER_SCANS = 2;
+// 레이드를 자동 체크하고 이만큼 지나면 캐릭터 잠금을 스스로 풀어서 이름을 다시 읽는다. 한 캐릭터로 레이드를
+// 돌고 나면 보통 다른 캐릭터로 갈아타는데, 그때마다 "캐릭터 재감지" 버튼을 누르는 게 번거로워서 넣었다.
+// 클리어 직후엔 아직 결과/보상 화면이라 파티원 목록이 안 떠 있고, 캐릭터를 바꿔 다음 레이드에 들어가기까지
+// 시간이 걸리므로 넉넉하게 3분을 기다린다(그 사이에 손으로 재감지/직접 선택을 하면 예약은 취소됨).
+const REDETECT_AFTER_CHECK_MS = 3 * 60 * 1000;
 
 type AutoCheckEvent = {
   id: string;
@@ -77,11 +82,14 @@ export default function AutoDetectRunner({
   // 엉뚱한 캐릭터로 남는다. 그래서 연속으로 같은 캐릭터가 나왔을 때만 확정한다(스캔 간격이 0.8초라
   // 실제 체감 지연은 1초 미만). 레이드 배너와 달리 파티원 이름은 화면에 계속 떠 있어서 놓칠 걱정이 없다.
   const pendingCharacterRef = useRef<{ id: string; count: number } | null>(null);
+  // 자동 체크 뒤 REDETECT_AFTER_CHECK_MS 후에 캐릭터 잠금을 풀어주는 예약 타이머
+  const redetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCharacterIdRef = useRef(characters[0]?.id ?? "");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
   const [autoDetectedCharacterId, setAutoDetectedCharacterId] = useState<string | null>(null);
   const [characterOcrStatus, setCharacterOcrStatus] = useState<OcrStatus>("idle");
+  const [redetectArmed, setRedetectArmed] = useState(false);
   const [lastCharacterOcrText, setLastCharacterOcrText] = useState("");
   useEffect(() => {
     selectedCharacterIdRef.current = selectedCharacterId;
@@ -104,20 +112,50 @@ export default function AutoDetectRunner({
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (redetectTimerRef.current) clearTimeout(redetectTimerRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
   function selectCharacterManually(characterId: string) {
+    cancelScheduledRedetect(); // 직접 고른 건 그대로 유지 — 예약된 자동 재감지가 나중에 덮어쓰지 않게
     selectedCharacterIdRef.current = characterId;
     setSelectedCharacterId(characterId);
     setAutoDetectedCharacterId(null);
     characterLockedRef.current = true; // 수동으로 고르면 자동 인식이 덮어쓰지 않게
   }
 
+  /** 예약해둔 "N분 뒤 캐릭터 재감지"를 취소한다 — 그 사이에 사용자가 직접 재감지/선택했거나 스캔을
+   *  중지했으면 예약이 남아있을 이유가 없다. */
+  function cancelScheduledRedetect() {
+    if (redetectTimerRef.current) {
+      clearTimeout(redetectTimerRef.current);
+      redetectTimerRef.current = null;
+    }
+    setRedetectArmed(false);
+  }
+
+  /** 레이드 자동 체크 직후 호출 — REDETECT_AFTER_CHECK_MS 뒤에 캐릭터 잠금을 자동으로 풀어준다.
+   *  연달아 체크가 일어나면 마지막 체크 시점 기준으로 다시 센다. */
+  function scheduleRedetectAfterCheck() {
+    if (!characterNameRegion) return; // 이름 인식 영역이 없으면 애초에 자동 인식 자체를 안 하므로 풀 잠금도 없음
+    cancelScheduledRedetect();
+    setRedetectArmed(true);
+    redetectTimerRef.current = setTimeout(() => {
+      redetectTimerRef.current = null;
+      if (!streamRef.current) { // 그 사이 스캔을 중지했으면 아무것도 안 함
+        setRedetectArmed(false);
+        return;
+      }
+      redetectCharacter();
+      setStatusText("캐릭터 재감지 중...");
+    }, REDETECT_AFTER_CHECK_MS);
+  }
+
   /** "재감지" 버튼 — 캐릭터를 바꿔서 레이드에 가거나 오탐으로 다른 캐릭터가 잡혔을 때, 다시 OCR로
    *  잡도록 잠금을 풀어준다. 스캔 중이면 다음 틱(최대 0.8초 뒤)에 바로 다시 읽는다. */
   function redetectCharacter() {
+    cancelScheduledRedetect();
     characterLockedRef.current = false;
     pendingCharacterRef.current = null;
     setAutoDetectedCharacterId(null);
@@ -191,6 +229,7 @@ export default function AutoDetectRunner({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      cancelScheduledRedetect(); // 이전 세션에서 남은 예약이 있으면 버린다
       characterLockedRef.current = false; // 새 스캔을 시작할 때마다 자동 인식에 다시 기회를 준다
       pendingCharacterRef.current = null;
       setAutoDetectedCharacterId(null);
@@ -215,6 +254,7 @@ export default function AutoDetectRunner({
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    cancelScheduledRedetect();
     setSharing(false);
     setStatusText("대기 중");
   }
@@ -320,6 +360,8 @@ export default function AutoDetectRunner({
         setStatusText(`${characterName} · ${raidLabel} 자동 체크 실패`);
       }
     }
+    // 체크가 성공했든 실패했든 "이 레이드는 끝났다"는 신호는 같으므로, 잠시 뒤 캐릭터를 다시 읽도록 예약한다.
+    scheduleRedetectAfterCheck();
   }
 
   async function undoEvent(event: AutoCheckEvent) {
@@ -363,7 +405,7 @@ export default function AutoDetectRunner({
           <button
             type="button"
             onClick={redetectCharacter}
-            title="캐릭터를 바꿔서 갔거나 오탐으로 다른 캐릭터가 잡혔을 때 다시 인식시켜요."
+            title="캐릭터를 바꿔서 갔거나 오탐으로 다른 캐릭터가 잡혔을 때 다시 인식시켜요. (자동 체크 3분 뒤에는 저절로 다시 인식해요)"
             className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:border-neutral-400 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
           >
             캐릭터 재감지
@@ -395,6 +437,11 @@ export default function AutoDetectRunner({
         {autoDetectedCharacterId === selectedCharacterId && (
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-400">
             OCR로 자동 인식됨
+          </span>
+        )}
+        {sharing && redetectArmed && (
+          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+            3분 뒤 캐릭터 자동 재감지
           </span>
         )}
         {sharing && characterOcrStatus === "recognizing" && (
