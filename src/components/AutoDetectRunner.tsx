@@ -84,6 +84,10 @@ export default function AutoDetectRunner({
   const pendingCharacterRef = useRef<{ id: string; count: number } | null>(null);
   // 자동 체크 뒤 REDETECT_AFTER_CHECK_MS 후에 캐릭터 잠금을 풀어주는 예약 타이머
   const redetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 재감지(3분 타이머 또는 버튼)로 잠금을 풀었는데 아직 다시 확정되지 않았으면 "풀기 직전 캐릭터 id",
+  // 아니면 null. 다시 확정되는 순간 상태 줄의 "캐릭터 재감지 중..."을 "재감지 완료"로 바꾸고, 같은
+  // 캐릭터를 다시 잡은 건지 다른 캐릭터로 바뀐 건지 구분해서 보여주는 데 쓴다.
+  const redetectFromIdRef = useRef<string | null>(null);
   const selectedCharacterIdRef = useRef(characters[0]?.id ?? "");
 
   const [selectedCharacterId, setSelectedCharacterId] = useState(characters[0]?.id ?? "");
@@ -119,6 +123,12 @@ export default function AutoDetectRunner({
 
   function selectCharacterManually(characterId: string) {
     cancelScheduledRedetect(); // 직접 고른 건 그대로 유지 — 예약된 자동 재감지가 나중에 덮어쓰지 않게
+    if (redetectFromIdRef.current !== null) {
+      // 재감지 도중에 직접 골랐으면 재감지는 끝난 것 — "캐릭터 재감지 중..."이 계속 남아있지 않게 한다.
+      redetectFromIdRef.current = null;
+      const name = characters.find((c) => c.id === characterId)?.name;
+      if (name) setStatusText(`직접 선택 · ${name}`);
+    }
     selectedCharacterIdRef.current = characterId;
     setSelectedCharacterId(characterId);
     setAutoDetectedCharacterId(null);
@@ -148,7 +158,6 @@ export default function AutoDetectRunner({
         return;
       }
       redetectCharacter();
-      setStatusText("캐릭터 재감지 중...");
     }, REDETECT_AFTER_CHECK_MS);
   }
 
@@ -156,11 +165,14 @@ export default function AutoDetectRunner({
    *  잡도록 잠금을 풀어준다. 스캔 중이면 다음 틱(최대 0.8초 뒤)에 바로 다시 읽는다. */
   function redetectCharacter() {
     cancelScheduledRedetect();
+    // 재감지 중에 또 눌렀으면 맨 처음 풀었을 때의 캐릭터를 그대로 비교 기준으로 둔다.
+    if (redetectFromIdRef.current === null) redetectFromIdRef.current = selectedCharacterIdRef.current;
     characterLockedRef.current = false;
     pendingCharacterRef.current = null;
     setAutoDetectedCharacterId(null);
     setCharacterOcrStatus("idle");
     setLastCharacterOcrText("");
+    setStatusText("캐릭터 재감지 중...");
   }
 
   /** 파티원 목록 맨 위 캐릭터 이름을 읽어서 selectedCharacterIdRef를 최신으로 맞춘다. runScan()의 맨 앞에서
@@ -196,6 +208,20 @@ export default function AutoDetectRunner({
 
         if (pendingCharacterRef.current.count < CONFIRM_CHARACTER_SCANS) return; // 아직 확정 전 — 다음 틱에 한 번 더 확인
 
+        const redetectFromId = redetectFromIdRef.current;
+        if (redetectFromId !== null) {
+          redetectFromIdRef.current = null;
+          // 같은 캐릭터면 "그 캐릭터를 다시 잡은 것", 다르면 "다른 캐릭터로 바꿔 잡은 것"이라 둘을 구분해서 보여준다.
+          const prevName = characters.find((c) => c.id === redetectFromId)?.name;
+          setStatusText(
+            redetectFromId === matched.id
+              ? `재감지 완료 · ${matched.name} (같은 캐릭터)`
+              : prevName
+                ? `재감지 완료 · ${prevName} → ${matched.name}`
+                : `재감지 완료 · ${matched.name}`
+          );
+        }
+
         if (matched.id !== selectedCharacterIdRef.current) {
           selectedCharacterIdRef.current = matched.id;
           setSelectedCharacterId(matched.id);
@@ -230,6 +256,7 @@ export default function AutoDetectRunner({
         await videoRef.current.play();
       }
       cancelScheduledRedetect(); // 이전 세션에서 남은 예약이 있으면 버린다
+      redetectFromIdRef.current = null; // 첫 인식은 "재감지"가 아니므로 완료 문구도 띄우지 않는다
       characterLockedRef.current = false; // 새 스캔을 시작할 때마다 자동 인식에 다시 기회를 준다
       pendingCharacterRef.current = null;
       setAutoDetectedCharacterId(null);
@@ -255,6 +282,7 @@ export default function AutoDetectRunner({
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     cancelScheduledRedetect();
+    redetectFromIdRef.current = null;
     setSharing(false);
     setStatusText("대기 중");
   }
