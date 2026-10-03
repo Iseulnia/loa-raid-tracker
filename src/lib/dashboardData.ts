@@ -5,6 +5,7 @@ type Profile = { id: string; nickname: string };
 type CharacterRow = Database["public"]["Tables"]["characters"]["Row"];
 type RaidRow = Database["public"]["Tables"]["raids"]["Row"];
 type CheckRow = Database["public"]["Tables"]["weekly_checks"]["Row"];
+type LockRow = { character_id: string; raid_id: string };
 type CharacterRaidRow = { character_id: string; raid_id: string; is_gold_earning: boolean };
 
 /**
@@ -58,7 +59,7 @@ async function queryAllPagesWithRetry<T>(
 }
 
 export async function loadDashboardData(supabase: SupabaseClient<Database>, weekKey: string) {
-  const [profiles, characters, raids, checks, characterRaids] = await Promise.all([
+  const [profiles, characters, raids, checks, locks, characterRaids] = await Promise.all([
     // profiles/raids는 행 수가 수십 개 수준으로 고정이라 한 번에 가져와도 한도에 안 걸린다.
     queryWithRetry("profiles", () => supabase.from("profiles").select("id, nickname")),
     queryAllPagesWithRetry("characters", (from, to) =>
@@ -86,6 +87,15 @@ export async function loadDashboardData(supabase: SupabaseClient<Database>, week
         .order("id")
         .range(from, to)
     ),
+    // 약속 잠금 — 체크와 같은 주차 단위라 커질 수 있는 쪽(캐릭터 수 × 레이드 수)이라 똑같이 나눠 가져온다.
+    queryAllPagesWithRetry("weekly_raid_locks", (from, to) =>
+      supabase
+        .from("weekly_raid_locks")
+        .select("character_id, raid_id")
+        .eq("week_key", weekKey)
+        .order("id")
+        .range(from, to)
+    ),
     queryAllPagesWithRetry("character_raids", (from, to) =>
       supabase.from("character_raids").select("character_id, raid_id, is_gold_earning").order("id").range(from, to)
     ),
@@ -95,6 +105,10 @@ export async function loadDashboardData(supabase: SupabaseClient<Database>, week
     characters.failed && "캐릭터",
     raids.failed && "레이드",
     checks.failed && "체크",
+    // 약속 잠금은 일부러 뺀다 — 못 불러와도 "노란 표시가 안 보인다"가 전부라서 체크/숙제처럼 저장이
+    // 날아간 것처럼 보이지 않고, 마이그레이션(migration_2026-10-03_weekly_raid_locks.sql)을 아직 안 돌린
+    // DB에서는 이 조회만 계속 실패해서 경고 배너가 상시 떠버린다. 실패 사실은 queryWithRetry가 서버
+    // 콘솔에 남긴다.
     characterRaids.failed && "숙제 선택",
   ].filter((v): v is string => Boolean(v));
 
@@ -103,6 +117,7 @@ export async function loadDashboardData(supabase: SupabaseClient<Database>, week
     characters: (characters.data as CharacterRow[] | null) ?? [],
     raids: (raids.data as RaidRow[] | null) ?? [],
     checks: (checks.data as CheckRow[] | null) ?? [],
+    locks: (locks.data as LockRow[] | null) ?? [],
     characterRaids: (characterRaids.data as CharacterRaidRow[] | null) ?? [],
     loadWarning:
       failedLabels.length > 0

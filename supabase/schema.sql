@@ -173,9 +173,28 @@ create table if not exists public.gem_price_snapshots (
 
 create index if not exists gem_price_snapshots_gem_key_idx on public.gem_price_snapshots (gem_key, recorded_at desc);
 
+-- ─────────────────────────────────────────────
+-- 4-3. weekly_raid_locks: "이번 주에 이 레이드는 약속이 잡혀 있다" 표시 (대시보드/공격대 탭 우클릭).
+--    weekly_checks와 짝을 이루지만 의미가 정반대다 — 약속은 "아직 안 간 상태"라서 클리어 수/남은 골드
+--    계산에는 전혀 반영하지 않고, 화면에서 노란 배경 + 자물쇠로만 구분해서 보여준다.
+--    week_key를 같이 저장하므로 주간 초기화가 지나면 별도 정리 없이 자동으로 풀린다.
+-- ─────────────────────────────────────────────
+create table if not exists public.weekly_raid_locks (
+  id uuid primary key default gen_random_uuid(),
+  character_id uuid not null references public.characters (id) on delete cascade,
+  raid_id uuid not null references public.raids (id) on delete cascade,
+  week_key text not null,
+  locked_by uuid not null references public.profiles (id),
+  locked_at timestamptz not null default now(),
+  unique (character_id, raid_id, week_key)
+);
+
+create index if not exists weekly_raid_locks_week_key_idx on public.weekly_raid_locks (week_key);
+
 -- 실시간 DELETE 이벤트에 삭제된 행의 전체 컬럼이 실려오게 함 (기본값은 PK만 전달되어
 -- 다른 친구 화면에서 체크 해제가 실시간으로 반영되지 않는 문제가 생김)
 alter table public.weekly_checks replica identity full;
+alter table public.weekly_raid_locks replica identity full;
 alter table public.character_raids replica identity full;
 
 -- ─────────────────────────────────────────────
@@ -188,6 +207,7 @@ alter table public.raids enable row level security;
 alter table public.character_raids enable row level security;
 alter table public.raid_clear_templates enable row level security;
 alter table public.weekly_checks enable row level security;
+alter table public.weekly_raid_locks enable row level security;
 alter table public.market_item_prices enable row level security;
 alter table public.gem_price_snapshots enable row level security;
 
@@ -293,6 +313,26 @@ create policy "market_item_prices_select_all" on public.market_item_prices
 create policy "market_item_prices_write_all" on public.market_item_prices
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
+-- 약속 잠금은 체크와 똑같이 "전원 조회 가능, 내 캐릭터만 쓰기 가능". 잠금은 켜고 끄기만 있어서(값을
+-- 수정할 게 없음) insert/delete만 두고 update 정책은 두지 않는다 — 서버 액션도 중복 insert를
+-- ON CONFLICT DO NOTHING으로 흘려보내서 UPDATE가 아예 일어나지 않는다.
+create policy "raid_locks_select_all" on public.weekly_raid_locks
+  for select using (auth.role() = 'authenticated');
+create policy "raid_locks_insert_own_character" on public.weekly_raid_locks
+  for insert with check (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
+create policy "raid_locks_delete_own_character" on public.weekly_raid_locks
+  for delete using (
+    exists (
+      select 1 from public.characters c
+      where c.id = character_id and c.owner_id = auth.uid()
+    )
+  );
+
 create policy "gem_price_snapshots_select_all" on public.gem_price_snapshots
   for select using (auth.role() = 'authenticated');
 create policy "gem_price_snapshots_insert_all" on public.gem_price_snapshots
@@ -302,6 +342,7 @@ create policy "gem_price_snapshots_insert_all" on public.gem_price_snapshots
 -- 6. 실시간 브로드캐스트 활성화 (체크하면 다른 친구 화면에도 바로 반영)
 -- ─────────────────────────────────────────────
 alter publication supabase_realtime add table public.weekly_checks;
+alter publication supabase_realtime add table public.weekly_raid_locks;
 alter publication supabase_realtime add table public.characters;
 alter publication supabase_realtime add table public.character_raids;
 

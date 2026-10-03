@@ -256,6 +256,37 @@ export async function setRaidCheck(params: {
   }
 }
 
+/** "이번 주에 이 레이드는 약속이 잡혀 있다"는 표시를 켜고 끈다 (대시보드/공격대 탭에서 숙제를 우클릭).
+ *  체크(setRaidCheck)와는 완전히 별개 — 약속은 아직 안 간 상태라서 클리어 수나 남은 골드에는 반영되지 않고,
+ *  화면에서 노란 배경 + 자물쇠로만 구분된다. week_key로 저장하므로 주간 초기화가 지나면 자동으로 풀린다. */
+export async function setRaidLock(params: { characterId: string; raidId: string; locked: boolean }) {
+  const { supabase, user } = await requireUser();
+  const weekKey = getCurrentWeekKey();
+
+  if (params.locked) {
+    // 잠금은 켜고 끄기만 있어서 이미 있는 행을 고칠 일이 없다 — ignoreDuplicates로 ON CONFLICT DO NOTHING이
+    // 되게 해서, 중복 요청이 와도 UPDATE가 일어나지 않게 한다(그래서 UPDATE용 RLS 정책도 필요 없음).
+    const { error } = await supabase.from("weekly_raid_locks").upsert(
+      {
+        character_id: params.characterId,
+        raid_id: params.raidId,
+        week_key: weekKey,
+        locked_by: user.id,
+      },
+      { onConflict: "character_id,raid_id,week_key", ignoreDuplicates: true }
+    );
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("weekly_raid_locks")
+      .delete()
+      .eq("character_id", params.characterId)
+      .eq("raid_id", params.raidId)
+      .eq("week_key", weekKey);
+    if (error) throw new Error(error.message);
+  }
+}
+
 export type CharacterRaidSelection = { raidId: string; goldEarning: boolean };
 
 /** 캐릭터가 주간 숙제로 도는 레이드 목록(과 그중 골드를 받을 레이드)을 통째로 교체한다 (대시보드의 '숙제 편집'에서 사용).

@@ -16,7 +16,7 @@ export default async function HomePage() {
 
   const weekKey = getCurrentWeekKey();
 
-  const { profiles, characters, raids, checks, characterRaids, loadWarning } = await loadDashboardData(
+  const { profiles, characters, raids, checks, locks, characterRaids, loadWarning } = await loadDashboardData(
     supabase,
     weekKey
   );
@@ -29,6 +29,11 @@ export default async function HomePage() {
           이번 주({weekKey} 06:00부터) · 다음 초기화까지 {getTimeUntilReset()}
         </p>
       </div>
+
+      <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
+        숙제를 <span className="font-medium">우클릭</span>하면 약속이 잡힌 레이드로 표시돼요(노란 배경 + 자물쇠).
+        아직 다녀온 게 아니라서 클리어 수와 남을 골드는 그대로예요.
+      </p>
 
       {loadWarning && (
         <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">
@@ -44,6 +49,7 @@ export default async function HomePage() {
         characters={characters}
         raids={raids}
         initialChecks={checks}
+        initialLocks={locks}
         initialCharacterRaids={characterRaids}
       />
     </main>

@@ -180,6 +180,39 @@ export type Database = {
           },
         ];
       };
+      weekly_raid_locks: {
+        Row: {
+          id: string;
+          character_id: string;
+          raid_id: string;
+          week_key: string;
+          locked_by: string;
+          locked_at: string;
+        };
+        Insert: {
+          id?: string;
+          character_id: string;
+          raid_id: string;
+          week_key: string;
+          locked_by: string;
+          locked_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["weekly_raid_locks"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "weekly_raid_locks_character_id_fkey";
+            columns: ["character_id"];
+            referencedRelation: "characters";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "weekly_raid_locks_raid_id_fkey";
+            columns: ["raid_id"];
+            referencedRelation: "raids";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       market_item_prices: {
         Row: {
           item_id: number;
@@ -232,3 +265,4 @@ export type Raid = Database["public"]["Tables"]["raids"]["Row"];
 export type CharacterRaid = Database["public"]["Tables"]["character_raids"]["Row"];
 export type RaidClearTemplate = Database["public"]["Tables"]["raid_clear_templates"]["Row"];
 export type WeeklyCheck = Database["public"]["Tables"]["weekly_checks"]["Row"];
+export type WeeklyRaidLock = Database["public"]["Tables"]["weekly_raid_locks"]["Row"];

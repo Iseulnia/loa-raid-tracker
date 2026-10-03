@@ -15,7 +15,7 @@ export default async function PartyPage() {
 
   const weekKey = getCurrentWeekKey();
 
-  const { profiles, characters, raids, checks, characterRaids, loadWarning } = await loadDashboardData(
+  const { profiles, characters, raids, checks, locks, characterRaids, loadWarning } = await loadDashboardData(
     supabase,
     weekKey
   );
@@ -30,7 +30,8 @@ export default async function PartyPage() {
       </div>
       <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
         친구들 전체의 이번 주 체크 현황을 한눈에 볼 수 있는 공용 탭이에요. 내 캐릭터만 체크할 수 있고, 다른
-        사람 캐릭터는 보기만 가능해요.
+        사람 캐릭터는 보기만 가능해요. 내 숙제를 <span className="font-medium">우클릭</span>하면 약속이 잡힌
+        레이드로 표시돼요(노란 배경 + 자물쇠) — 아직 다녀온 게 아니라서 클리어 수와 남을 골드는 그대로예요.
       </p>
 
       {loadWarning && (
@@ -47,6 +48,7 @@ export default async function PartyPage() {
         characters={characters}
         raids={raids}
         initialChecks={checks}
+        initialLocks={locks}
         initialCharacterRaids={characterRaids}
       />
     </main>

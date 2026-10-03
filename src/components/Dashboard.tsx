@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { setRaidCheck, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
+import { setRaidCheck, setRaidLock, refreshAllCombatPower, resetAllCombatPower } from "@/app/actions";
 import HomeworkEditor from "@/components/HomeworkEditor";
 import CharacterReorderModal from "@/components/CharacterReorderModal";
 import AnimatedNumber from "@/components/AnimatedNumber";
@@ -46,6 +46,8 @@ type CheckRow = {
   checked_by: string;
 };
 type CharacterRaidRow = { character_id: string; raid_id: string; is_gold_earning: boolean };
+/** "이번 주에 이 레이드는 약속이 잡혀 있다" 표시(우클릭). 체크와 달리 관문 단위가 아니라 레이드 단위다. */
+type LockRow = { character_id: string; raid_id: string };
 type RaidStatusEntry = {
   raidName: string;
   difficulties: { difficulty: string; sortOrder: number; done: number; total: number }[];
@@ -56,6 +58,15 @@ type RaidStatusEntry = {
 };
 
 type DifficultyFilter = { raidName: string; difficulty: string };
+
+/** 체크박스 자리에 들어가는 자물쇠(약속 잡힌 레이드). 체크의 "✓"와 같은 크기감을 맞추려고 아주 작게 그린다. */
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="h-2.5 w-2.5">
+      <path d="M12 1a5 5 0 0 0-5 5v3H6.5A1.5 1.5 0 0 0 5 10.5v11A1.5 1.5 0 0 0 6.5 23h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 17.5 9H17V6a5 5 0 0 0-5-5Zm-3 5a3 3 0 1 1 6 0v3H9V6Z" />
+    </svg>
+  );
+}
 
 /** 레이드별 현황 카드 — 공격대 탭에서는 사람별로(접었다 펴는 영역 안에) 하나씩, 대시보드 탭에서는 나만
  *  하나 뜬다. 어느 쪽이든 렌더링 방식은 같아서 컴포넌트로 분리해뒀다. 난이도 배지를 누르면 그 아래 캐릭터
@@ -142,6 +153,10 @@ function checkKey(characterId: string, raidId: string, gate: number) {
   return `${characterId}:${raidId}:${gate}`;
 }
 
+function lockKey(characterId: string, raidId: string) {
+  return `${characterId}:${raidId}`;
+}
+
 // 체크를 빠르게 두 번(체크→해제) 누르면 서버로 나가는 두 요청이 순서 보장 없이 따로 날아가서, 네트워크
 // 타이밍에 따라 "해제" 요청이 "체크" 요청보다 먼저 서버에 도착해버릴 수 있었다 — 그러면 최종 DB 상태는
 // 체크된 채로 남고, 뒤늦게 도착한 Realtime INSERT 이벤트 때문에 화면에서 체크가 잠깐 사라졌다가 다시
@@ -151,6 +166,9 @@ function checkKey(characterId: string, raidId: string, gate: number) {
 const pendingCheckChains = new Map<string, Promise<void>>();
 // 실패 시 되돌릴지 판단할 때, 그 사이 사용자가 다시 토글해서 더 최신 의도가 생겼으면 되돌리면 안 되므로 기억해둔다.
 const desiredCheckStates = new Map<string, boolean>();
+// 약속 잠금도 같은 이유로 키별 요청 순서를 보장한다(우클릭을 빠르게 두 번 하면 잠금/해제 요청이 뒤집힐 수 있음).
+const pendingLockChains = new Map<string, Promise<void>>();
+const desiredLockStates = new Map<string, boolean>();
 
 export default function Dashboard({
   mode,
@@ -160,6 +178,7 @@ export default function Dashboard({
   characters,
   raids,
   initialChecks,
+  initialLocks,
   initialCharacterRaids,
 }: {
   /** "mine": 내 캐릭터만 보여주는 개인 대시보드. "party": 친구 전체를 모아 보는 공용 탭. */
@@ -170,10 +189,14 @@ export default function Dashboard({
   characters: CharacterRow[];
   raids: RaidRow[];
   initialChecks: CheckRow[];
+  initialLocks: LockRow[];
   initialCharacterRaids: CharacterRaidRow[];
 }) {
   const [checkedSet, setCheckedSet] = useState<Set<string>>(
     () => new Set(initialChecks.map((c) => checkKey(c.character_id, c.raid_id, c.gate_number)))
+  );
+  const [lockedSet, setLockedSet] = useState<Set<string>>(
+    () => new Set(initialLocks.map((l) => lockKey(l.character_id, l.raid_id)))
   );
   // characterId -> (raidId -> 골드 받기로 고른 레이드인지)
   const [characterRaidMap, setCharacterRaidMap] = useState<Map<string, Map<string, boolean>>>(() => {
@@ -291,6 +314,25 @@ export default function Dashboard({
         setCheckedSet((prev) => {
           const next = new Set(prev);
           next.delete(checkKey(row.character_id!, row.raid_id!, row.gate_number!));
+          return next;
+        });
+      })
+      // 약속 잠금도 친구 화면에 바로 반영 — 같은 레이드를 두 명이 같이 가기로 한 경우가 많아서,
+      // 누가 약속을 잡았는지 바로 보이는 게 체크만큼이나 쓸모 있다.
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "weekly_raid_locks", filter: `week_key=eq.${weekKey}` },
+        (payload) => {
+          const row = payload.new as LockRow;
+          setLockedSet((prev) => new Set(prev).add(lockKey(row.character_id, row.raid_id)));
+        }
+      )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "weekly_raid_locks" }, (payload) => {
+        const row = payload.old as Partial<LockRow>;
+        if (!row.character_id || !row.raid_id) return;
+        setLockedSet((prev) => {
+          const next = new Set(prev);
+          next.delete(lockKey(row.character_id!, row.raid_id!));
           return next;
         });
       })
@@ -413,6 +455,41 @@ export default function Dashboard({
       })
     );
     pendingCheckChains.set(key, chain);
+  }
+
+  function isLocked(characterId: string, raidId: string) {
+    return lockedSet.has(lockKey(characterId, raidId));
+  }
+
+  /** 숙제를 우클릭했을 때 "약속 잡힘" 표시를 켜고 끈다. 레이드를 간 게 아니라 갈 예정이라는 표시라서,
+   *  클리어 수·남은 골드 계산에는 일부러 전혀 반영하지 않는다(화면 색과 자물쇠 아이콘만 바뀜). */
+  function toggleLock(character: CharacterRow, raidId: string) {
+    if (character.owner_id !== currentUserId) return; // 남의 캐릭터는 읽기 전용
+    const key = lockKey(character.id, raidId);
+    const nextLocked = !lockedSet.has(key);
+
+    desiredLockStates.set(key, nextLocked);
+
+    setLockedSet((prev) => {
+      const next = new Set(prev);
+      if (nextLocked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+    const prevChain = pendingLockChains.get(key) ?? Promise.resolve();
+    const chain = prevChain.then(() =>
+      setRaidLock({ characterId: character.id, raidId, locked: nextLocked }).catch(() => {
+        if (desiredLockStates.get(key) !== nextLocked) return; // 그 사이 더 최신 의도가 생겼으면 되돌리지 않는다
+        setLockedSet((prev) => {
+          const next = new Set(prev);
+          if (nextLocked) next.delete(key);
+          else next.add(key);
+          return next;
+        });
+      })
+    );
+    pendingLockChains.set(key, chain);
   }
 
   function selectedRaidsFor(character: CharacterRow): RaidRow[] {
@@ -828,6 +905,8 @@ export default function Dashboard({
                         {selectedRaids.map((raid) => {
                           const eligible = (character.item_level ?? 0) >= raid.min_item_level;
                           const cleared = isRaidClearedAtAll(character.id, raid);
+                          // 클리어가 약속보다 우선 — 이미 다녀왔으면 약속 표시는 가려지고, 체크를 풀면 다시 노란색으로 돌아온다.
+                          const locked = !cleared && isLocked(character.id, raid.id);
                           const disabled = !mine || !eligible;
                           const noGold = character.is_gold_earner && !goldEarningIds.has(raid.id);
                           return (
@@ -836,11 +915,26 @@ export default function Dashboard({
                               type="button"
                               disabled={disabled}
                               onClick={() => toggle(character, raid.id, 1)}
-                              title={!eligible ? "아이템레벨 미달" : undefined}
+                              onContextMenu={(e) => {
+                                if (!mine) return; // 남의 캐릭터에선 평소대로 브라우저 기본 메뉴가 뜨게 둔다
+                                e.preventDefault();
+                                toggleLock(character, raid.id);
+                              }}
+                              title={
+                                !eligible
+                                  ? "아이템레벨 미달"
+                                  : mine
+                                  ? locked
+                                    ? "우클릭하면 약속 표시 해제"
+                                    : "우클릭하면 약속 잡힌 레이드로 표시"
+                                  : undefined
+                              }
                               className={[
                                 "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors duration-300 ease-out",
                                 cleared
                                   ? "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-800/50 dark:text-neutral-400"
+                                  : locked
+                                  ? "border-amber-300 bg-amber-50 font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
                                   : "border-neutral-200 bg-white font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200",
                                 !eligible ? "opacity-40" : "",
                                 mine && eligible ? "cursor-pointer hover:border-emerald-400" : "cursor-default",
@@ -849,13 +943,15 @@ export default function Dashboard({
                               <span className={["flex items-center gap-1.5 transition-colors duration-300 ease-out", cleared ? "line-through" : ""].join(" ")}>
                                 <span
                                   className={[
-                                    "flex h-4 w-4 items-center justify-center rounded border text-[10px] transition-colors duration-300 ease-out",
+                                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] transition-colors duration-300 ease-out",
                                     cleared
                                       ? "border-neutral-300 bg-neutral-200 text-neutral-500 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+                                      : locked
+                                      ? "border-amber-400 bg-amber-100 text-amber-700 dark:border-amber-600 dark:bg-amber-900/60 dark:text-amber-300"
                                       : "border-neutral-300 dark:border-neutral-600",
                                   ].join(" ")}
                                 >
-                                  {cleared ? "✓" : ""}
+                                  {cleared ? "✓" : locked ? <LockIcon /> : ""}
                                 </span>
                                 {raid.name}{" "}
                                 <span className={cleared ? "" : difficultyColorClass(raid.difficulty)}>
