@@ -27,9 +27,9 @@ export default async function NavBar() {
         <NavLinks />
         <div className="flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400">
           <ThemeToggle />
-          <span>{profile?.nickname ?? user.email}님</span>
           {/* 게임 채팅에 자주 치는 명령어라 매번 직접 타이핑하지 않게 바로 복사할 수 있게 둔다 */}
           <CopyTextButton text="/탈출" />
+          <span>{profile?.nickname ?? user.email}님</span>
           <form action={signOut}>
             <button
               type="submit"
