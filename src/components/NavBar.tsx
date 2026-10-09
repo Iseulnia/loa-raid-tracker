@@ -2,6 +2,7 @@
 import { signOut } from "@/app/actions";
 import ThemeToggle from "@/components/ThemeToggle";
 import NavLinks from "@/components/NavLinks";
+import CopyTextButton from "@/components/CopyTextButton";
 
 export default async function NavBar() {
   const supabase = await createClient();
@@ -27,6 +28,8 @@ export default async function NavBar() {
         <div className="flex items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400">
           <ThemeToggle />
           <span>{profile?.nickname ?? user.email}님</span>
+          {/* 게임 채팅에 자주 치는 명령어라 매번 직접 타이핑하지 않게 바로 복사할 수 있게 둔다 */}
+          <CopyTextButton text="/탈출" />
           <form action={signOut}>
             <button
               type="submit"
